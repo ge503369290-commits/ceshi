@@ -1,0 +1,18 @@
+{
+  "name": "training-library-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal training library MVP with login, roles, content management, uploads, and mind maps.",
+  "scripts": {
+    "dev": "npx netlify dev",
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js && node --check netlify/functions/api.mjs && node --check functions/api/[[path]].js",
+    "build": "npm run check"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.7.9"
+  }
+}

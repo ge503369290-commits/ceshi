@@ -1,0 +1,10 @@
+node_modules/
+npm-debug.log*
+.npm-cache/
+.env
+.env.*
+.wrangler/
+.wrangler-config/
+.netlify/
+deno.lock
+data/db.json

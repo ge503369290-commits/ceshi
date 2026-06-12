@@ -1,0 +1,7 @@
+.git/
+.netlify/
+.npm-cache/
+.wrangler-config/
+node_modules/
+data/
+deno.lock
