@@ -3,8 +3,8 @@ import { onRequest as handleApiRequest } from "./functions/api/[[path]].js";
 const EMBEDDED_ASSETS = globalThis.__STATIC_ASSETS__ || {};
 const REMOTE_ASSET_URLS = {
   "/index.html": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/9d8185c0656746a5be628a9041800a117c54e645/index.html",
-  "/app.js": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/125a1a22a9adf0e6fcbb360b1c65d76fd2c075ad/app.js?v=mindmap-reflow-encoding-20260612",
-  "/styles.css": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/6ddc00a5885e58587c057a23144309f1eea6f5ad/styles.css"
+  "/app.js": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/43926c12fa2a375472f980afc92c214f262bc634/app.js?v=admin-editor-ime-20260612",
+  "/styles.css": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/946e7906099a10ac5270ce32ff7b00fadc4c806a/styles.css?v=admin-editor-layout-20260612"
 };
 
 const STATIC_CACHE_HEADERS = {

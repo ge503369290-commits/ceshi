@@ -1281,6 +1281,25 @@ function bindMindEditor() {
     clearTimeout(diagramReflowTimer);
     diagramReflowTimer = setTimeout(() => refreshAndRestoreTextInput(path, selectionStart, selectionEnd), 60);
   };
+  const isComposingText = (event, input) => event?.isComposing || input.dataset.composing === "true";
+  const syncTopicText = (input, event) => {
+    getDiagramNode(input.dataset.mindText).text = input.value;
+    const heightChanged = fitTopicToText(input);
+    const inspector = document.querySelector("[data-selected-title]");
+    if (inspector && input.dataset.mindText === state.diagramSelected) inspector.value = input.value;
+    if (heightChanged && !isComposingText(event, input)) scheduleDiagramReflow(input);
+  };
+  const syncInspectorText = (input, event) => {
+    selectedDiagramNode().text = input.value;
+    const canvasInput = document.querySelector(`.map-topic.selected [data-mind-text]`);
+    if (canvasInput) {
+      canvasInput.value = input.value;
+      const heightChanged = fitTopicToText(canvasInput);
+      if (heightChanged && !isComposingText(event, input)) scheduleDiagramReflow(canvasInput);
+    }
+    const outlineTitle = document.querySelector(`.diagram-edit-node.selected .outline-title`);
+    if (outlineTitle) outlineTitle.textContent = input.value;
+  };
   const runAction = (action) => {
     state.diagramSelected = safeDiagramPath(state.diagramSelected);
     if (action === "addChild") addDiagramChild(state.diagramSelected);
@@ -1334,24 +1353,29 @@ function bindMindEditor() {
       document.querySelectorAll(".map-topic.selected").forEach((item) => item.classList.remove("selected"));
       input.closest(".map-topic")?.classList.add("selected");
     });
-    input.addEventListener("input", () => {
-      getDiagramNode(input.dataset.mindText).text = input.value;
-      if (fitTopicToText(input)) scheduleDiagramReflow(input);
-      const inspector = document.querySelector("[data-selected-title]");
-      if (inspector && input.dataset.mindText === state.diagramSelected) inspector.value = input.value;
+    input.addEventListener("compositionstart", () => {
+      input.dataset.composing = "true";
+      clearTimeout(diagramReflowTimer);
+    });
+    input.addEventListener("compositionend", (event) => {
+      delete input.dataset.composing;
+      syncTopicText(input, event);
+    });
+    input.addEventListener("input", (event) => {
+      syncTopicText(input, event);
     });
     input.addEventListener("blur", refresh);
   });
-  document.querySelector("[data-selected-title]")?.addEventListener("input", (event) => {
-    selectedDiagramNode().text = event.target.value;
-    const canvasInput = document.querySelector(`.map-topic.selected [data-mind-text]`);
-    if (canvasInput) {
-      canvasInput.value = event.target.value;
-      if (fitTopicToText(canvasInput)) scheduleDiagramReflow(canvasInput);
-    }
-    const outlineTitle = document.querySelector(`.diagram-edit-node.selected .outline-title`);
-    if (outlineTitle) outlineTitle.textContent = event.target.value;
+  const selectedTitleInput = document.querySelector("[data-selected-title]");
+  selectedTitleInput?.addEventListener("compositionstart", () => {
+    selectedTitleInput.dataset.composing = "true";
+    clearTimeout(diagramReflowTimer);
   });
+  selectedTitleInput?.addEventListener("compositionend", (event) => {
+    delete selectedTitleInput.dataset.composing;
+    syncInspectorText(selectedTitleInput, event);
+  });
+  selectedTitleInput?.addEventListener("input", (event) => syncInspectorText(event.target, event));
   document.querySelector("[data-node-width]")?.addEventListener("change", (event) => {
     selectedDiagramNode().width = Math.max(diagramMetrics.minNodeWidth, Math.min(600, Number(event.target.value) || diagramMetrics.nodeWidth));
     refresh();
@@ -1528,6 +1552,7 @@ function bindTopicGeometry(refresh) {
 function handleDiagramShortcut(event) {
   const editor = document.querySelector("#mindEditor");
   if (!editor) return;
+  if (event.isComposing || event.key === "Process") return;
   const active = document.activeElement;
   if (active?.closest("#materialForm") && !active.closest("#mindEditor")) return;
   const isNodeText = active?.matches?.("[data-mind-text], [data-selected-title]");

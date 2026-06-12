@@ -1088,6 +1088,10 @@ body {
   padding: 32px 48px 64px;
 }
 
+.editor-layout .content {
+  width: 100%;
+}
+
 .login-page {
   background:
     linear-gradient(90deg, rgba(118, 185, 0, 0.2) 0 1px, transparent 1px 100%),
