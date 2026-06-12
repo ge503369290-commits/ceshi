@@ -29,7 +29,7 @@ async function api(path, options = {}) {
     ...options
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "????");
+  if (!res.ok) throw new Error(data.error || "请求失败");
   return data;
 }
 
@@ -47,25 +47,25 @@ function formatDate(value) {
 }
 
 function roleText(role) {
-  return role === "admin" ? "???" : "??";
+  return role === "admin" ? "管理员" : "员工";
 }
 
 function typeText(type) {
-  return { text: "??", image: "??", video: "??", mindmap: "????" }[type] || "??";
+  return { text: "文字", image: "图文", video: "视频", mindmap: "思维导图" }[type] || "文字";
 }
 
 const diagramTypes = [
-  { value: "mindmap", label: "????" },
-  { value: "org", label: "?????" },
-  { value: "fishbone", label: "???" },
-  { value: "logic", label: "???" },
-  { value: "timeline", label: "???" },
-  { value: "tree", label: "???" },
-  { value: "flow", label: "???" }
+  { value: "mindmap", label: "思维导图" },
+  { value: "org", label: "组织结构图" },
+  { value: "fishbone", label: "鱼骨图" },
+  { value: "logic", label: "逻辑图" },
+  { value: "timeline", label: "时间轴" },
+  { value: "tree", label: "树状图" },
+  { value: "flow", label: "流程图" }
 ];
 
 function diagramTypeText(type) {
-  return diagramTypes.find((item) => item.value === type)?.label || "????";
+  return diagramTypes.find((item) => item.value === type)?.label || "思维导图";
 }
 
 function clientId(prefix = "node") {
@@ -76,7 +76,7 @@ function isFiniteDiagramNumber(value) {
   return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
 }
 
-function createDiagramNode(text = "???", children = []) {
+function createDiagramNode(text = "新节点", children = []) {
   return { id: clientId(), text, collapsed: false, children, width: 164, height: 56 };
 }
 
@@ -84,16 +84,16 @@ function createDefaultDiagram(structure = "mindmap") {
   return {
     version: 2,
     structure,
-    root: createDiagramNode("????", [
-      createDiagramNode("???? A"),
-      createDiagramNode("???? B")
+    root: createDiagramNode("中心主题", [
+      createDiagramNode("分支主题 A"),
+      createDiagramNode("分支主题 B")
     ])
   };
 }
 
 function normalizeDiagram(input) {
   if (!input) return createDefaultDiagram();
-  const normalizeNode = (node, fallback = "???") => ({
+  const normalizeNode = (node, fallback = "新节点") => ({
     id: node?.id || clientId(),
     text: String(node?.text || fallback),
     collapsed: Boolean(node?.collapsed),
@@ -108,13 +108,13 @@ function normalizeDiagram(input) {
     return {
       version: 2,
       structure: diagramTypes.some((item) => item.value === input.structure) ? input.structure : "mindmap",
-      root: normalizeNode(input.root, "????")
+      root: normalizeNode(input.root, "中心主题")
     };
   }
   return {
     version: 2,
     structure: "mindmap",
-    root: normalizeNode(input, "????")
+    root: normalizeNode(input, "中心主题")
   };
 }
 
@@ -300,7 +300,7 @@ function isDescendantPath(path, maybeParent) {
 function addDiagramChild(path) {
   const node = getDiagramNode(path);
   node.children ||= [];
-  node.children.push(createDiagramNode("????"));
+  node.children.push(createDiagramNode("新子节点"));
   node.collapsed = false;
   state.diagramSelected = partsToPath([...pathToParts(path), node.children.length - 1]);
 }
@@ -308,7 +308,7 @@ function addDiagramChild(path) {
 function addDiagramSibling(path) {
   const ref = getDiagramParent(path);
   if (!ref) return addDiagramChild(path);
-  ref.parent.children.splice(ref.index + 1, 0, createDiagramNode("?????"));
+  ref.parent.children.splice(ref.index + 1, 0, createDiagramNode("新同级节点"));
   state.diagramSelected = partsToPath([...pathToParts(ref.parentPath), ref.index + 1]);
 }
 
@@ -442,12 +442,12 @@ function setError(message) {
 function fileToDataUrl(file, maxBytes, label) {
   return new Promise((resolve, reject) => {
     if (file.size > maxBytes) {
-      reject(new Error(`${label}????`));
+      reject(new Error(`${label}文件过大`));
       return;
     }
     const reader = new FileReader();
     reader.onload = () => resolve({ name: file.name, dataUrl: reader.result });
-    reader.onerror = () => reject(new Error(`${label}????`));
+    reader.onerror = () => reject(new Error(`${label}读取失败`));
     reader.readAsDataURL(file);
   });
 }
@@ -479,13 +479,13 @@ function renderSetup() {
   app.innerHTML = `
     <section class="login-page">
       <form class="login-card" id="setupForm">
-        <h1>??????????</h1>
-        <p class="muted">????????,???????????????????????</p>
+        <h1>初始化内部培训资料库</h1>
+        <p class="muted">这是首次生产部署，请创建管理员密码。完成后初始化入口会自动关闭。</p>
         <div data-error></div>
-        <label class="field"><span>?????</span><input name="displayName" value="?????" required /></label>
-        <label class="field"><span>?????(?? 12 ?)</span><input name="password" type="password" minlength="12" autocomplete="new-password" required /></label>
-        <label class="field"><span>????</span><input name="confirmPassword" type="password" minlength="12" autocomplete="new-password" required /></label>
-        <button class="btn" type="submit">?????</button>
+        <label class="field"><span>管理员名称</span><input name="displayName" value="系统管理员" required /></label>
+        <label class="field"><span>管理员密码（至少 12 位）</span><input name="password" type="password" minlength="12" autocomplete="new-password" required /></label>
+        <label class="field"><span>确认密码</span><input name="confirmPassword" type="password" minlength="12" autocomplete="new-password" required /></label>
+        <button class="btn" type="submit">完成初始化</button>
       </form>
     </section>
   `;
@@ -494,7 +494,7 @@ function renderSetup() {
     setError("");
     const form = new FormData(event.currentTarget);
     if (form.get("password") !== form.get("confirmPassword")) {
-      setError("??????????");
+      setError("两次输入的密码不一致");
       return;
     }
     try {
@@ -514,12 +514,12 @@ function renderLogin() {
   app.innerHTML = `
     <section class="login-page">
       <form class="login-card" id="loginForm">
-        <h1>???????</h1>
-        <p class="muted">??????????????</p>
+        <h1>内部培训资料库</h1>
+        <p class="muted">请输入管理员创建的账号密码。</p>
         <div data-error></div>
-        <label class="field"><span>??</span><input name="username" autocomplete="username" required /></label>
-        <label class="field"><span>??</span><input name="password" type="password" autocomplete="current-password" required /></label>
-        <button class="btn" type="submit">??</button>
+        <label class="field"><span>账号</span><input name="username" autocomplete="username" required /></label>
+        <label class="field"><span>密码</span><input name="password" type="password" autocomplete="current-password" required /></label>
+        <button class="btn" type="submit">登录</button>
       </form>
     </section>
   `;
@@ -545,24 +545,24 @@ function renderShell() {
   app.innerHTML = `
     <section class="shell">
       <div class="utility-bar">
-        <span>??????</span>
-        <span>???????????????</span>
+        <span>企业学习中心</span>
+        <span>资料、图文、视频、在线思维导图</span>
       </div>
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">TL</span>
-          <strong>???????</strong>
+          <strong>内部培训资料库</strong>
         </div>
         <div class="navlinks">
-          <span>??</span>
-          <span>??</span>
-          <span>??</span>
-          <span>??</span>
+          <span>资料</span>
+          <span>方案</span>
+          <span>团队</span>
+          <span>支持</span>
         </div>
         <div class="userbar">
           <span>${escapeHtml(state.user.displayName)} / ${escapeHtml(state.user.username)}</span>
           <span class="badge">${roleText(state.user.role)}</span>
-          <button class="btn secondary" data-action="logout">??</button>
+          <button class="btn secondary" data-action="logout">退出</button>
         </div>
       </header>
       <div class="layout ${editorMode ? "editor-layout" : ""}">
@@ -579,11 +579,11 @@ function renderShell() {
 }
 
 function renderTabs() {
-  const tabs = [`<button class="tab ${state.view === "library" ? "active" : ""}" data-view="library">???</button>`];
+  const tabs = [`<button class="tab ${state.view === "library" ? "active" : ""}" data-view="library">资料库</button>`];
   if (state.user.role === "admin") {
-    tabs.push(`<button class="tab ${["admin", "adminEditor"].includes(state.view) ? "active" : ""}" data-view="admin">????</button>`);
-    tabs.push(`<button class="tab ${state.view === "users" ? "active" : ""}" data-view="users">????</button>`);
-    tabs.push(`<button class="tab ${state.view === "logs" ? "active" : ""}" data-view="logs">????</button>`);
+    tabs.push(`<button class="tab ${["admin", "adminEditor"].includes(state.view) ? "active" : ""}" data-view="admin">管理后台</button>`);
+    tabs.push(`<button class="tab ${state.view === "users" ? "active" : ""}" data-view="users">账号管理</button>`);
+    tabs.push(`<button class="tab ${state.view === "logs" ? "active" : ""}" data-view="logs">操作日志</button>`);
   }
   return `<nav class="tabs">${tabs.join("")}</nav>`;
 }
@@ -592,27 +592,27 @@ function renderFilters() {
   return `
     <div class="filters">
       <div class="filter-heading">
-        <strong>????</strong>
-        <span>${state.materials.length} ???</span>
+        <strong>筛选资料</strong>
+        <span>${state.materials.length} 项内容</span>
       </div>
-      <label class="field"><span>??</span><input data-filter="q" value="${escapeHtml(state.filters.q)}" placeholder="????????" /></label>
+      <label class="field"><span>搜索</span><input data-filter="q" value="${escapeHtml(state.filters.q)}" placeholder="标题、正文、标签" /></label>
       <label class="field">
-        <span>??</span>
+        <span>分类</span>
         <select data-filter="category">
-          <option value="">????</option>
+          <option value="">全部分类</option>
           ${state.categories.map((item) => `<option ${item === state.filters.category ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}
         </select>
       </label>
       <label class="field">
-        <span>??</span>
+        <span>标签</span>
         <select data-filter="tag">
-          <option value="">????</option>
+          <option value="">全部标签</option>
           ${state.tags.map((item) => `<option ${item === state.filters.tag ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}
         </select>
       </label>
-      <button class="btn" data-action="applyFilters">??</button>
-      <button class="btn secondary" data-action="clearFilters">??</button>
-      <div class="notice">??????????????</div>
+      <button class="btn" data-action="applyFilters">筛选</button>
+      <button class="btn secondary" data-action="clearFilters">清空</button>
+      <div class="notice">普通员工只能看到已发布资料。</div>
     </div>
   `;
 }
@@ -662,11 +662,11 @@ function renderLibrary(target) {
     <section class="library-hero">
       <div class="hero-copy">
         <span class="eyebrow">TRAINING LIBRARY</span>
-        <h1>??????????????????????????</h1>
-        <p>?????????????????,????????????????????</p>
+        <h1>把内部知识组织成可检索、可学习、可复用的工程化资料库</h1>
+        <p>以课程、图文、视频和思维导图为核心，让团队在同一个清晰的学习界面里找到答案。</p>
         <div class="hero-actions">
-          <button class="btn" data-action="focusSearch">????</button>
-          ${state.user.role === "admin" ? '<button class="btn outline-on-dark" data-view="admin">????</button>' : ""}
+          <button class="btn" data-action="focusSearch">浏览资料</button>
+          ${state.user.role === "admin" ? '<button class="btn outline-on-dark" data-view="admin">进入管理</button>' : ""}
         </div>
       </div>
       <div class="hero-visual" aria-hidden="true">
@@ -680,9 +680,9 @@ function renderLibrary(target) {
     <section class="section-head">
       <div>
         <span class="eyebrow">LATEST RESOURCES</span>
-        <h2>????</h2>
+        <h2>培训资料</h2>
       </div>
-      <p>????????????,??????????????????</p>
+      <p>按分类和标签快速定位内容，管理员可直接编辑、删除或发布新资料。</p>
     </section>
     <div class="grid">
       ${state.materials
@@ -693,16 +693,16 @@ function renderLibrary(target) {
               <div class="meta">
                 <span class="chip">${escapeHtml(item.category)}</span>
                 <span class="chip">${typeText(item.type)}</span>
-                ${item.status === "draft" ? '<span class="chip status-draft">??</span>' : ""}
+                ${item.status === "draft" ? '<span class="chip status-draft">草稿</span>' : ""}
               </div>
               <h3>${escapeHtml(item.title)}</h3>
-              <p>${escapeHtml(item.body || "??????")}</p>
+              <p>${escapeHtml(item.body || "暂无文字说明")}</p>
               <div class="meta">${(item.tags || []).map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
               <div class="row">
-                <button class="btn" data-open="${item.id}">??</button>
+                <button class="btn" data-open="${item.id}">查看</button>
                 ${
                   state.user.role === "admin"
-                    ? `<button class="btn secondary" data-edit="${item.id}">??</button><button class="btn danger" data-delete="${item.id}">??</button>`
+                    ? `<button class="btn secondary" data-edit="${item.id}">编辑</button><button class="btn danger" data-delete="${item.id}">删除</button>`
                     : ""
                 }
               </div>
@@ -711,7 +711,7 @@ function renderLibrary(target) {
         )
         .join("")}
     </div>
-    ${state.materials.length ? "" : '<div class="empty">????????????</div>'}
+    ${state.materials.length ? "" : '<div class="empty">没有找到符合条件的资料。</div>'}
   `;
   bindMaterialActions();
 }
@@ -745,7 +745,7 @@ function bindMaterialActions() {
   });
   document.querySelectorAll("[data-delete]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("????????????")) return;
+      if (!confirm("确定删除这条培训资料吗？")) return;
       await api(`/api/materials/${button.dataset.delete}`, { method: "DELETE", body: "{}" });
       await loadBootstrap();
       renderShell();
@@ -759,7 +759,7 @@ function renderDetail(target) {
   target.innerHTML = `
     <article class="detail detail-page">
       <section class="detail-hero">
-        <button class="btn outline-on-dark" data-action="back">????</button>
+        <button class="btn outline-on-dark" data-action="back">返回列表</button>
         <span class="eyebrow">RESOURCE DETAIL</span>
         <h1>${escapeHtml(item.title)}</h1>
         <div class="meta">
@@ -767,7 +767,7 @@ function renderDetail(target) {
           <span class="chip">${typeText(item.type)}</span>
           ${(item.tags || []).map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}
         </div>
-        <p class="muted">????:${formatDate(item.updatedAt)}</p>
+        <p class="muted">更新时间：${formatDate(item.updatedAt)}</p>
       </section>
       <div class="detail-body">
         ${renderContentBlocks(blocks, item)}
@@ -800,14 +800,14 @@ function fitReadOnlyDiagrams() {
 
 function renderImages(images = []) {
   if (!images.length) return "";
-  return `<div class="media-list">${images.map((img) => `<img src="${img.dataUrl}" alt="${escapeHtml(img.name || "??")}" />`).join("")}</div>`;
+  return `<div class="media-list">${images.map((img) => `<img src="${img.dataUrl}" alt="${escapeHtml(img.name || "图片")}" />`).join("")}</div>`;
 }
 
 function renderContentBlocks(blocks = [], material = {}) {
   return blocks
     .map((block) => {
       if (block.type === "image" && block.image?.dataUrl) {
-        return `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "??")}" />${block.body ? `<figcaption>${escapeHtml(block.body).replaceAll("\n", "<br>")}</figcaption>` : ""}</figure>`;
+        return `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" />${block.body ? `<figcaption>${escapeHtml(block.body).replaceAll("\n", "<br>")}</figcaption>` : ""}</figure>`;
       }
       if (block.type === "mindmap") {
         const diagram = block.mindmap ? normalizeDiagram(block.mindmap) : normalizeDiagram(material.mindmap);
@@ -821,10 +821,10 @@ function renderContentBlocks(blocks = [], material = {}) {
 function renderVideo(video) {
   if (!video?.mode) return "";
   if (video.mode === "upload" && video.dataUrl) {
-    return `<h2>??</h2><video class="video" controls src="${video.dataUrl}"></video>`;
+    return `<h2>视频</h2><video class="video" controls src="${video.dataUrl}"></video>`;
   }
   if (video.url) {
-    return `<h2>??</h2><p><a class="btn" href="${escapeHtml(video.url)}" target="_blank" rel="noreferrer">??????</a></p>`;
+    return `<h2>视频</h2><p><a class="btn" href="${escapeHtml(video.url)}" target="_blank" rel="noreferrer">打开外链视频</a></p>`;
   }
   return "";
 }
@@ -1014,15 +1014,15 @@ function renderDiagramNodeTopic(item, layout, editable = false) {
   }
   return `
     <div class="map-topic map-tone-${tone} ${item.path === "root" ? "root" : ""} ${selected ? "selected" : ""}" style="${style}" data-diagram-path="${item.path}" data-diagram-select="${item.path}" data-topic-x="${item.x}" data-topic-y="${item.y}" data-topic-width="${item.width}" data-topic-height="${item.height}">
-      <label class="topic-check" title="??"><input type="checkbox" ${checked ? "checked" : ""} ${item.path === "root" ? "disabled" : ""} data-diagram-check="${item.path}" /></label>
-      <button type="button" class="topic-move" title="??????" data-topic-move="${item.path}"></button>
-      <textarea data-mind-text="${item.path}" aria-label="????">${escapeHtml(item.node.text)}</textarea>
-      ${children.length ? `<button type="button" class="topic-fold" title="${collapsed ? "??" : "??"}" data-mind-toggle="${item.path}">${collapsed ? children.length : "?"}</button>` : ""}
-      <button type="button" class="topic-resize" title="??????" data-topic-resize="${item.path}"></button>
+      <label class="topic-check" title="多选"><input type="checkbox" ${checked ? "checked" : ""} ${item.path === "root" ? "disabled" : ""} data-diagram-check="${item.path}" /></label>
+      <button type="button" class="topic-move" title="拖拽移动位置" data-topic-move="${item.path}"></button>
+      <textarea data-mind-text="${item.path}" aria-label="节点文字">${escapeHtml(item.node.text)}</textarea>
+      ${children.length ? `<button type="button" class="topic-fold" title="${collapsed ? "展开" : "折叠"}" data-mind-toggle="${item.path}">${collapsed ? children.length : "−"}</button>` : ""}
+      <button type="button" class="topic-resize" title="拖拽调整宽高" data-topic-resize="${item.path}"></button>
       ${selected ? `
         <div class="topic-quick">
-          <button type="button" title="????? Tab" data-mind-add="${item.path}">+</button>
-          <button type="button" title="???? Enter" data-mind-sibling="${item.path}">?</button>
+          <button type="button" title="添加子节点 Tab" data-mind-add="${item.path}">+</button>
+          <button type="button" title="添加同级 Enter" data-mind-sibling="${item.path}">↵</button>
         </div>
       ` : ""}
     </div>
@@ -1051,33 +1051,33 @@ function renderAdmin(target) {
     <div class="admin-dashboard">
       <section class="panel dashboard-head">
         <div>
-          <h2>????</h2>
-          <p class="muted">?????????????,?????????????????</p>
+          <h2>资料管理</h2>
+          <p class="muted">新增资料会进入独立编辑页面，适合编辑大型思维导图和多模块内容。</p>
         </div>
-        <button class="btn" type="button" data-action="createMaterial">????</button>
+        <button class="btn" type="button" data-action="createMaterial">新增资料</button>
       </section>
       <div class="admin-grid">
         <section class="panel">
-          <h2>?????</h2>
+          <h2>分类和标签</h2>
           <form id="taxonomyForm">
-            <label class="field"><span>??,????</span><textarea name="categories">${escapeHtml(state.categories.join("\n"))}</textarea></label>
-            <label class="field"><span>??,????</span><textarea name="tags">${escapeHtml(state.tags.join("\n"))}</textarea></label>
-            <button class="btn" type="submit">??????</button>
+            <label class="field"><span>分类，每行一个</span><textarea name="categories">${escapeHtml(state.categories.join("\n"))}</textarea></label>
+            <label class="field"><span>标签，每行一个</span><textarea name="tags">${escapeHtml(state.tags.join("\n"))}</textarea></label>
+            <button class="btn" type="submit">保存分类标签</button>
           </form>
         </section>
         <section class="panel">
-          <h2>????</h2>
+          <h2>资料列表</h2>
           <table class="table">
-            <thead><tr><th>??</th><th>??</th><th>??</th><th>??</th></tr></thead>
+            <thead><tr><th>排序</th><th>标题</th><th>状态</th><th>操作</th></tr></thead>
             <tbody>
               ${state.materials
                 .map(
                   (item) => `
                     <tr draggable="true" data-material-row="${item.id}">
-                      <td><span class="drag-handle" title="????">?</span></td>
+                      <td><span class="drag-handle" title="拖动排序">↕</span></td>
                       <td>${escapeHtml(item.title)}</td>
-                      <td>${item.status === "draft" ? "??" : "??"}</td>
-                      <td><button class="btn secondary" data-edit="${item.id}">??</button></td>
+                      <td>${item.status === "draft" ? "草稿" : "发布"}</td>
+                      <td><button class="btn secondary" data-edit="${item.id}">编辑</button></td>
                     </tr>
                   `
                 )
@@ -1100,21 +1100,21 @@ function renderMaterialEditor(target) {
     <form class="panel material-editor-page" id="materialForm">
       <div class="editor-page-head">
         <div>
-          <h2>${state.editing ? "????" : "????"}</h2>
-          <p class="muted">???????????,????????????</p>
+          <h2>${state.editing ? "编辑资料" : "新增资料"}</h2>
+          <p class="muted">当前页面专用于内容编辑，导图画布会占用完整宽度。</p>
         </div>
-        <button class="btn secondary" type="button" data-action="backAdmin">????</button>
+        <button class="btn secondary" type="button" data-action="backAdmin">返回后台</button>
       </div>
         <div data-error></div>
-        <label class="field"><span>??</span><input name="title" value="${escapeHtml(draft.title ?? material.title ?? "")}" required /></label>
-        <label class="field"><span>??</span><input name="category" list="categoryList" value="${escapeHtml(draft.category ?? material.category ?? state.categories[0] ?? "")}" required /></label>
+        <label class="field"><span>标题</span><input name="title" value="${escapeHtml(draft.title ?? material.title ?? "")}" required /></label>
+        <label class="field"><span>分类</span><input name="category" list="categoryList" value="${escapeHtml(draft.category ?? material.category ?? state.categories[0] ?? "")}" required /></label>
         <datalist id="categoryList">${state.categories.map((item) => `<option>${escapeHtml(item)}</option>`).join("")}</datalist>
-        <label class="field"><span>??,?????</span><input name="tags" value="${escapeHtml(draft.tags ?? (material.tags || []).join(", "))}" /></label>
-        <label class="field"><span>??</span><select name="status"><option value="published" ${(draft.status ?? material.status) !== "draft" ? "selected" : ""}>??</option><option value="draft" ${(draft.status ?? material.status) === "draft" ? "selected" : ""}>??</option></select></label>
+        <label class="field"><span>标签，用逗号分隔</span><input name="tags" value="${escapeHtml(draft.tags ?? (material.tags || []).join(", "))}" /></label>
+        <label class="field"><span>状态</span><select name="status"><option value="published" ${(draft.status ?? material.status) !== "draft" ? "selected" : ""}>发布</option><option value="draft" ${(draft.status ?? material.status) === "draft" ? "selected" : ""}>草稿</option></select></label>
         ${renderContentBlockEditor()}
         <div class="row">
-          <button class="btn" type="submit">${state.editing ? "????" : "????"}</button>
-          <button class="btn secondary" type="button" data-action="newMaterial">????</button>
+          <button class="btn" type="submit">${state.editing ? "保存修改" : "发布资料"}</button>
+          <button class="btn secondary" type="button" data-action="newMaterial">新建空白</button>
         </div>
     </form>
   `;
@@ -1126,15 +1126,15 @@ function renderContentBlockEditor() {
   return `
     <section class="content-builder">
       <div class="builder-head">
-        <h3>????</h3>
+        <h3>资料内容</h3>
         <div class="row">
-          <button class="btn secondary" type="button" data-add-block="text">???</button>
-          <button class="btn secondary" type="button" data-add-block="image">?????</button>
-          <button class="btn secondary" type="button" data-add-block="mindmap">????</button>
+          <button class="btn secondary" type="button" data-add-block="text">纯文字</button>
+          <button class="btn secondary" type="button" data-add-block="image">文字加图片</button>
+          <button class="btn secondary" type="button" data-add-block="mindmap">思维导图</button>
         </div>
       </div>
       <div class="builder-blocks">
-        ${state.contentBlocks.length ? state.contentBlocks.map((block, index) => renderContentBlockEditorItem(block, index)).join("") : '<div class="empty">????????????</div>'}
+        ${state.contentBlocks.length ? state.contentBlocks.map((block, index) => renderContentBlockEditorItem(block, index)).join("") : '<div class="empty">请选择要添加的资料模块。</div>'}
       </div>
     </section>
   `;
@@ -1144,9 +1144,9 @@ function renderContentBlockEditorItem(block, index) {
   const controls = `
     <div class="block-controls">
       <span class="badge">${index + 1}</span>
-      <button class="btn secondary" type="button" data-move-block="${index}" data-direction="-1" ${index === 0 ? "disabled" : ""}>??</button>
-      <button class="btn secondary" type="button" data-move-block="${index}" data-direction="1" ${index === state.contentBlocks.length - 1 ? "disabled" : ""}>??</button>
-      <button class="btn danger" type="button" data-remove-block="${index}" ${state.contentBlocks.length === 1 ? "disabled" : ""}>??</button>
+      <button class="btn secondary" type="button" data-move-block="${index}" data-direction="-1" ${index === 0 ? "disabled" : ""}>上移</button>
+      <button class="btn secondary" type="button" data-move-block="${index}" data-direction="1" ${index === state.contentBlocks.length - 1 ? "disabled" : ""}>下移</button>
+      <button class="btn danger" type="button" data-remove-block="${index}" ${state.contentBlocks.length === 1 ? "disabled" : ""}>删除</button>
     </div>
   `;
 
@@ -1154,9 +1154,9 @@ function renderContentBlockEditorItem(block, index) {
     return `
       <div class="builder-block">
         ${controls}
-        <label class="field"><span>??????????</span><textarea data-block-body="${index}" placeholder="?????????,?????">${escapeHtml(block.body || "")}</textarea></label>
-        <label class="field"><span>??,????? 3MB</span><input type="file" accept="image/*" data-block-image="${index}" /></label>
-        ${block.image?.dataUrl ? `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "??")}" /><button type="button" class="btn secondary" data-clear-block-image="${index}">????</button></figure>` : ""}
+        <label class="field"><span>图片上方或下方的文字</span><textarea data-block-body="${index}" placeholder="这里可以写图片说明，也可以留空">${escapeHtml(block.body || "")}</textarea></label>
+        <label class="field"><span>图片，单张不超过 3MB</span><input type="file" accept="image/*" data-block-image="${index}" /></label>
+        ${block.image?.dataUrl ? `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" /><button type="button" class="btn secondary" data-clear-block-image="${index}">移除图片</button></figure>` : ""}
       </div>
     `;
   }
@@ -1173,7 +1173,7 @@ function renderContentBlockEditorItem(block, index) {
   return `
     <div class="builder-block">
       ${controls}
-      <label class="field"><span>????</span><textarea data-block-body="${index}">${escapeHtml(block.body || "")}</textarea></label>
+      <label class="field"><span>文字内容</span><textarea data-block-body="${index}">${escapeHtml(block.body || "")}</textarea></label>
     </div>
   `;
 }
@@ -1185,32 +1185,32 @@ function renderMindEditor() {
   target.innerHTML = `
     <div class="mind-editor-shell" tabindex="0">
       <div class="mind-menubar">
-        <select id="diagramStructure" title="????">
+        <select id="diagramStructure" title="导图结构">
           ${diagramTypes.map((item) => `<option value="${item.value}" ${state.mindmap.structure === item.value ? "selected" : ""}>${item.label}</option>`).join("")}
         </select>
-        <div class="mind-toolbar" role="toolbar" aria-label="???????">
-          <button type="button" class="tool-btn" title="????? Tab" data-diagram-action="addChild">+</button>
-          <button type="button" class="tool-btn" title="?????? Enter" data-diagram-action="addSibling">?</button>
-          <button type="button" class="tool-btn" title="?? Delete" data-diagram-action="remove">?</button>
+        <div class="mind-toolbar" role="toolbar" aria-label="思维导图工具栏">
+          <button type="button" class="tool-btn" title="添加子节点 Tab" data-diagram-action="addChild">+</button>
+          <button type="button" class="tool-btn" title="添加同级节点 Enter" data-diagram-action="addSibling">↵</button>
+          <button type="button" class="tool-btn" title="删除 Delete" data-diagram-action="remove">⌫</button>
           <span class="tool-separator"></span>
-          <button type="button" class="tool-btn" title="?? Ctrl+C" data-diagram-action="copy">C</button>
-          <button type="button" class="tool-btn" title="?? Ctrl+X" data-diagram-action="cut">X</button>
-          <button type="button" class="tool-btn" title="?? Ctrl+V" data-diagram-action="paste">V</button>
-          <button type="button" class="tool-btn" title="???? Ctrl+D" data-diagram-action="duplicate">D</button>
+          <button type="button" class="tool-btn" title="复制 Ctrl+C" data-diagram-action="copy">C</button>
+          <button type="button" class="tool-btn" title="剪切 Ctrl+X" data-diagram-action="cut">X</button>
+          <button type="button" class="tool-btn" title="粘贴 Ctrl+V" data-diagram-action="paste">V</button>
+          <button type="button" class="tool-btn" title="复制节点 Ctrl+D" data-diagram-action="duplicate">D</button>
           <span class="tool-separator"></span>
-          <button type="button" class="tool-btn" title="??/?? Space" data-diagram-action="toggle">?</button>
-          <button type="button" class="tool-btn" title="?? Ctrl+?" data-diagram-action="moveUp">?</button>
-          <button type="button" class="tool-btn" title="?? Ctrl+?" data-diagram-action="moveDown">?</button>
-          <button type="button" class="tool-btn" title="???? Shift+Tab" data-diagram-action="promote">?</button>
-          <button type="button" class="tool-btn wide" title="?????????????" data-diagram-action="batchMove">????</button>
+          <button type="button" class="tool-btn" title="折叠/展开 Space" data-diagram-action="toggle">−</button>
+          <button type="button" class="tool-btn" title="上移 Ctrl+↑" data-diagram-action="moveUp">↑</button>
+          <button type="button" class="tool-btn" title="下移 Ctrl+↓" data-diagram-action="moveDown">↓</button>
+          <button type="button" class="tool-btn" title="提升层级 Shift+Tab" data-diagram-action="promote">⇤</button>
+          <button type="button" class="tool-btn wide" title="把勾选节点移动到当前节点下" data-diagram-action="batchMove">多选移动</button>
           <span class="tool-separator"></span>
-          <button type="button" class="tool-btn" title="?? Ctrl+-" data-diagram-action="zoomOut">?</button>
+          <button type="button" class="tool-btn" title="缩小 Ctrl+-" data-diagram-action="zoomOut">−</button>
           <span class="zoom-readout">${Math.round(state.diagramZoom * 100)}%</span>
-          <button type="button" class="tool-btn" title="?? Ctrl+=" data-diagram-action="zoomIn">+</button>
-          <button type="button" class="tool-btn" title="???? Ctrl+0" data-diagram-action="zoomReset">1:1</button>
+          <button type="button" class="tool-btn" title="放大 Ctrl+=" data-diagram-action="zoomIn">+</button>
+          <button type="button" class="tool-btn" title="重置缩放 Ctrl+0" data-diagram-action="zoomReset">1:1</button>
           <span class="tool-separator"></span>
-          <button type="button" class="tool-btn wide" title="?? JSON" data-diagram-action="export">??</button>
-          <label class="tool-btn wide import-btn" title="?? JSON">??<input type="file" accept="application/json,.json" data-diagram-import /></label>
+          <button type="button" class="tool-btn wide" title="导出 JSON" data-diagram-action="export">导出</button>
+          <label class="tool-btn wide import-btn" title="导入 JSON">导入<input type="file" accept="application/json,.json" data-diagram-import /></label>
         </div>
       </div>
       <div class="mind-workbench">
@@ -1219,20 +1219,20 @@ function renderMindEditor() {
         </div>
         <aside class="mind-side">
           <section class="mind-inspector">
-            <h3>??</h3>
-            <label class="field compact"><span>????</span><input value="${escapeHtml(selected.text)}" data-selected-title /></label>
+            <h3>属性</h3>
+            <label class="field compact"><span>当前节点</span><input value="${escapeHtml(selected.text)}" data-selected-title /></label>
             <div class="inspector-grid">
-              <label class="field compact"><span>??</span><input type="number" min="110" max="600" value="${Math.round(diagramNodeWidth(selected))}" data-node-width /></label>
-              <label class="field compact"><span>??</span><input type="number" min="44" max="360" value="${Math.round(diagramNodeHeight(selected))}" data-node-height /></label>
+              <label class="field compact"><span>宽度</span><input type="number" min="110" max="600" value="${Math.round(diagramNodeWidth(selected))}" data-node-width /></label>
+              <label class="field compact"><span>高度</span><input type="number" min="44" max="360" value="${Math.round(diagramNodeHeight(selected))}" data-node-height /></label>
             </div>
             <div class="row">
-              <button type="button" class="btn secondary" data-diagram-action="addChild">???</button>
-              <button type="button" class="btn secondary" data-diagram-action="addSibling">??</button>
-              <button type="button" class="btn danger" data-diagram-action="remove" ${state.diagramSelected === "root" ? "disabled" : ""}>??</button>
+              <button type="button" class="btn secondary" data-diagram-action="addChild">子节点</button>
+              <button type="button" class="btn secondary" data-diagram-action="addSibling">同级</button>
+              <button type="button" class="btn danger" data-diagram-action="remove" ${state.diagramSelected === "root" ? "disabled" : ""}>删除</button>
             </div>
           </section>
           <section class="mind-outline">
-            <h3>??</h3>
+            <h3>大纲</h3>
             <div class="outline-list">${renderMindOutlineNode(state.mindmap.root, "root")}</div>
           </section>
         </aside>
@@ -1250,7 +1250,7 @@ function renderMindOutlineNode(node, path) {
       <div class="diagram-edit-row" style="--depth:${pathToParts(path).length}">
         <input type="checkbox" ${checked ? "checked" : ""} ${canCheck ? "" : "disabled"} data-diagram-check="${path}" />
         <button type="button" class="outline-title" data-diagram-select="${path}">${escapeHtml(node.text)}</button>
-        ${(node.children || []).length ? `<button type="button" class="outline-fold" data-mind-toggle="${path}">${node.collapsed ? "+" : "?"}</button>` : ""}
+        ${(node.children || []).length ? `<button type="button" class="outline-fold" data-mind-toggle="${path}">${node.collapsed ? "+" : "−"}</button>` : ""}
       </div>
       <div class="mind-children ${node.collapsed ? "collapsed" : ""}">
         ${node.collapsed ? "" : (node.children || []).map((child, index) => renderMindOutlineNode(child, partsToPath([...pathToParts(path), index]))).join("")}
@@ -1394,7 +1394,7 @@ function bindMindEditor() {
       state.diagramChecked = new Set();
       refresh();
     } catch {
-      setError("????,???????? JSON ??");
+      setError("导入失败，请选择正确的导图 JSON 文件");
     }
   });
   document.querySelectorAll("[data-diagram-path]").forEach((node) => {
@@ -1698,7 +1698,7 @@ function bindMaterialEditor() {
     button.addEventListener("click", () => {
       rememberMaterialForm();
       if (button.dataset.addBlock === "mindmap" && state.contentBlocks.some((block) => block.type === "mindmap")) {
-        setError("???????????????????");
+        setError("一份资料暂时只需要添加一个思维导图模块");
         return;
       }
       state.contentBlocks.push(createContentBlock(button.dataset.addBlock));
@@ -1716,7 +1716,7 @@ function bindMaterialEditor() {
       const file = input.files?.[0];
       if (!file) return;
       try {
-        state.contentBlocks[Number(input.dataset.blockImage)].image = await fileToDataUrl(file, 3 * 1024 * 1024, "??");
+        state.contentBlocks[Number(input.dataset.blockImage)].image = await fileToDataUrl(file, 3 * 1024 * 1024, "图片");
         rememberMaterialForm();
         renderMainView();
       } catch (error) {
@@ -1755,7 +1755,7 @@ function bindMaterialEditor() {
     const form = new FormData(event.currentTarget);
     const blocks = serializeContentBlocks();
     if (!blocks.length) {
-      setError("???????????");
+      setError("请至少添加一个资料模块");
       return;
     }
     const body = blocks
@@ -1768,7 +1768,7 @@ function bindMaterialEditor() {
     const payload = {
       title: form.get("title"),
       category: form.get("category"),
-      tags: String(form.get("tags") || "").split(/[,,]/),
+      tags: String(form.get("tags") || "").split(/[，,]/),
       type: deriveMaterialType(blocks),
       status: form.get("status"),
       body,
@@ -1796,18 +1796,18 @@ async function renderUsers(target) {
   target.innerHTML = `
     <div class="admin-grid">
       <form class="panel" id="userForm">
-        <h2>????</h2>
+        <h2>新增账号</h2>
         <div data-error></div>
-        <label class="field"><span>??</span><input name="username" required /></label>
-        <label class="field"><span>????</span><input name="displayName" /></label>
-        <label class="field"><span>??</span><input name="password" type="password" required minlength="6" /></label>
-        <label class="field"><span>??</span><select name="role"><option value="employee">??</option><option value="admin">???</option></select></label>
-        <button class="btn" type="submit">????</button>
+        <label class="field"><span>账号</span><input name="username" required /></label>
+        <label class="field"><span>显示名称</span><input name="displayName" /></label>
+        <label class="field"><span>密码</span><input name="password" type="password" required minlength="6" /></label>
+        <label class="field"><span>角色</span><select name="role"><option value="employee">员工</option><option value="admin">管理员</option></select></label>
+        <button class="btn" type="submit">创建账号</button>
       </form>
       <section class="panel">
-        <h2>????</h2>
+        <h2>账号列表</h2>
         <table class="table">
-          <thead><tr><th>??</th><th>??</th><th>??</th><th>??</th><th>????</th><th>??</th></tr></thead>
+          <thead><tr><th>账号</th><th>名称</th><th>角色</th><th>状态</th><th>重置密码</th><th>操作</th></tr></thead>
           <tbody>
             ${data.users
               .map(
@@ -1815,10 +1815,10 @@ async function renderUsers(target) {
                   <tr>
                     <td>${escapeHtml(user.username)}</td>
                     <td><input value="${escapeHtml(user.displayName)}" data-user-name="${user.id}" /></td>
-                    <td><select data-user-role="${user.id}"><option value="employee" ${user.role === "employee" ? "selected" : ""}>??</option><option value="admin" ${user.role === "admin" ? "selected" : ""}>???</option></select></td>
-                    <td><select data-user-active="${user.id}"><option value="true" ${user.active ? "selected" : ""}>??</option><option value="false" ${!user.active ? "selected" : ""}>??</option></select></td>
-                    <td><input type="password" minlength="6" placeholder="?????" data-user-password="${user.id}" /></td>
-                    <td class="row"><button class="btn secondary" data-save-user="${user.id}">??</button><button class="btn danger" data-delete-user="${user.id}" ${user.id === state.user.id ? "disabled" : ""}>??</button></td>
+                    <td><select data-user-role="${user.id}"><option value="employee" ${user.role === "employee" ? "selected" : ""}>员工</option><option value="admin" ${user.role === "admin" ? "selected" : ""}>管理员</option></select></td>
+                    <td><select data-user-active="${user.id}"><option value="true" ${user.active ? "selected" : ""}>启用</option><option value="false" ${!user.active ? "selected" : ""}>停用</option></select></td>
+                    <td><input type="password" minlength="6" placeholder="留空不修改" data-user-password="${user.id}" /></td>
+                    <td class="row"><button class="btn secondary" data-save-user="${user.id}">保存</button><button class="btn danger" data-delete-user="${user.id}" ${user.id === state.user.id ? "disabled" : ""}>删除</button></td>
                   </tr>
                 `
               )
@@ -1855,7 +1855,7 @@ async function renderUsers(target) {
   });
   document.querySelectorAll("[data-delete-user]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("??????????????????")) return;
+      if (!confirm("确定删除这个账号吗？该操作不可恢复。")) return;
       try {
         await api(`/api/users/${button.dataset.deleteUser}`, { method: "DELETE", body: "{}" });
         renderUsers(target);
@@ -1870,9 +1870,9 @@ async function renderLogs(target) {
   const data = await api("/api/audit-logs");
   target.innerHTML = `
     <section class="panel">
-      <h2>????</h2>
+      <h2>操作日志</h2>
       <table class="table">
-        <thead><tr><th>??</th><th>??</th><th>??</th><th>??</th><th>??</th></tr></thead>
+        <thead><tr><th>时间</th><th>账号</th><th>动作</th><th>对象</th><th>说明</th></tr></thead>
         <tbody>
           ${data.auditLogs
             .map(
