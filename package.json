@@ -5,14 +5,20 @@
   "description": "Internal training library MVP with login, roles, content management, uploads, and mind maps.",
   "scripts": {
     "dev": "npx netlify dev",
+    "dev:cloudflare": "wrangler dev",
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --check netlify/functions/api.mjs && node --check functions/api/[[path]].js",
-    "build": "npm run check"
+    "check": "node --check server.js && node --check public/app.js && node --check netlify/functions/api.mjs && node --check functions/api/[[path]].js && node --check worker.js",
+    "build": "npm run check",
+    "deploy": "wrangler deploy",
+    "cf:check": "wrangler check"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9"
+  },
+  "devDependencies": {
+    "wrangler": "^4.100.0"
   }
 }

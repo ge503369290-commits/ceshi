@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "training-library-mvp",
+  "main": "worker.js",
+  "compatibility_date": "2026-06-12",
+  "account_id": "f64e977b58f888aa46eb1ae5d4db7a9c",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "TRAINING_DB",
+      "id": "8e4bccbc09a54479ba405e10d4ae8b70"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production"
+  },
+  "routes": [
+    {
+      "pattern": "caz007.indevs.in/*",
+      "zone_name": "caz007.indevs.in"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

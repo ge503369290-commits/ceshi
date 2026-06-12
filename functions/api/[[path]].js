@@ -2,6 +2,7 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const MAX_JSON_BYTES = 6 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
+const PASSWORD_HASH_ITERATIONS = 100000;
 const DB_KEY = "db";
 
 function now() {
@@ -37,6 +38,14 @@ async function secret(env) {
   return env.SESSION_SECRET || "change-this-session-secret-before-production";
 }
 
+function envValue(env, name) {
+  return String(env?.[name] || "");
+}
+
+function isProduction(env) {
+  return envValue(env, "ENVIRONMENT") === "production";
+}
+
 async function makeSession(userId, env) {
   const payload = base64Url(textBytes(JSON.stringify({ userId, exp: Date.now() + SESSION_TTL_MS })));
   return `${payload}.${await hmac(payload, await secret(env))}`;
@@ -56,7 +65,7 @@ async function readSession(token, env) {
 async function hashPassword(password, salt = uid("salt")) {
   const key = await crypto.subtle.importKey("raw", textBytes(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: textBytes(salt), iterations: 120000 },
+    { name: "PBKDF2", hash: "SHA-256", salt: textBytes(salt), iterations: PASSWORD_HASH_ITERATIONS },
     key,
     256
   );
@@ -69,16 +78,23 @@ async function verifyPassword(password, stored) {
   return (await hashPassword(password, salt)) === stored;
 }
 
-async function seedDb() {
+async function seedDb(env) {
+  const configuredAdminPassword = envValue(env, "INITIAL_ADMIN_PASSWORD");
+  const employeePassword = envValue(env, "INITIAL_EMPLOYEE_PASSWORD");
+  const setupRequired = isProduction(env) && configuredAdminPassword.length < 12;
+  const adminPassword = configuredAdminPassword || (setupRequired ? uid("admin").repeat(4) : "admin123");
+  const employeeActive = !isProduction(env) || employeePassword.length >= 12;
+
   return {
+    setupRequired,
     users: [
       {
         id: "user_admin",
         username: "admin",
         displayName: "系统管理员",
         role: "admin",
-        active: true,
-        passwordHash: await hashPassword("admin123"),
+        active: !setupRequired,
+        passwordHash: await hashPassword(adminPassword),
         createdAt: now()
       },
       {
@@ -86,8 +102,8 @@ async function seedDb() {
         username: "employee",
         displayName: "普通员工",
         role: "employee",
-        active: true,
-        passwordHash: await hashPassword("employee123"),
+        active: employeeActive,
+        passwordHash: await hashPassword(employeePassword || (employeeActive ? "employee123" : uid("employee").repeat(4))),
         createdAt: now()
       }
     ],
@@ -140,7 +156,7 @@ async function readDb(env) {
   }
   const db = await env.TRAINING_DB.get(DB_KEY, "json");
   if (db) return db;
-  const seeded = await seedDb();
+  const seeded = await seedDb(env);
   await env.TRAINING_DB.put(DB_KEY, JSON.stringify(seeded));
   return seeded;
 }
@@ -313,6 +329,25 @@ async function route(req, env) {
   const method = req.method;
   const pathname = url.pathname;
 
+  if (pathname === "/api/setup" && method === "POST") {
+    if (!db.setupRequired) return json({ error: "Setup has already been completed" }, 409);
+    const body = await readJson(req);
+    const password = String(body.password || "");
+    if (password.length < 12) throw new Error("Password must be at least 12 characters");
+    const admin = db.users.find((item) => item.username === "admin" || item.role === "admin");
+    if (!admin) throw new Error("Admin account is missing");
+    admin.passwordHash = await hashPassword(password);
+    admin.active = true;
+    db.setupRequired = false;
+    audit(db, admin, "initial_setup", admin.id, "Completed initial admin setup");
+    await writeDb(env, db);
+    return json(
+      { user: publicUser(admin), setupRequired: false },
+      200,
+      { "Set-Cookie": `session=${await makeSession(admin.id, env)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_MS / 1000}` }
+    );
+  }
+
   if (pathname === "/api/login" && method === "POST") {
     const body = await readJson(req);
     const user = db.users.find((item) => item.username === String(body.username || "").trim());
@@ -333,7 +368,7 @@ async function route(req, env) {
   }
 
   if (pathname === "/api/me" && method === "GET") {
-    return json({ user: publicUser(await getSessionUser(req, env, db)) });
+    return json({ user: publicUser(await getSessionUser(req, env, db)), setupRequired: Boolean(db.setupRequired) });
   }
 
   const user = await requireUser(req, env, db);

@@ -5,6 +5,8 @@ npm-debug.log*
 .env.*
 .wrangler/
 .wrangler-config/
+.wrangler-bundle/
+.cloudflare-deploy/
 .netlify/
 deno.lock
 data/db.json
