@@ -1547,10 +1547,150 @@ textarea:focus {
   color: var(--body);
 }
 
+.feedback-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.filter-heading.compact {
+  padding-bottom: 10px;
+}
+
+.feedback-panel textarea {
+  min-height: 96px;
+}
+
+.feedback-hint {
+  font-size: 12px;
+}
+
+.file-pick {
+  position: relative;
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  border: 1px solid var(--primary);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.file-pick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.feedback-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.feedback-preview-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 28px;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.feedback-preview-item img {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+}
+
+.feedback-preview-item span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--body);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-btn {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.feedback-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.feedback-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.feedback-card p {
+  margin: 0;
+  color: var(--body);
+  line-height: 1.6;
+}
+
+.feedback-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.feedback-meta strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.feedback-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.feedback-images img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
 .error {
   border-radius: 2px;
   background: #fbe3e3;
   color: #650b0b;
+}
+
+.success {
+  padding: 10px 12px;
+  border-radius: 2px;
+  background: #e7f5d0;
+  color: #214900;
+  font-size: 13px;
 }
 
 .empty {

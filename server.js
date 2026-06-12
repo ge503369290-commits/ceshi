@@ -10,6 +10,8 @@ const DB_PATH = path.join(ROOT, "data", "db.json");
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const MAX_JSON_BYTES = 60 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_FEEDBACK_IMAGES = 6;
+const MAX_FEEDBACK_TOTAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
 
 const sessions = new Map();
@@ -95,7 +97,8 @@ function seedDb() {
         updatedAt: now()
       }
     ],
-    auditLogs: []
+    auditLogs: [],
+    feedbacks: []
   };
 }
 
@@ -109,6 +112,11 @@ function readDb() {
 
 function writeDb(db) {
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+}
+
+function ensureFeedbacks(db) {
+  if (!Array.isArray(db.feedbacks)) db.feedbacks = [];
+  return db.feedbacks;
 }
 
 function publicUser(user) {
@@ -234,6 +242,32 @@ function dataUrlBytes(dataUrl) {
   return Buffer.byteLength(base64, "base64");
 }
 
+function normalizeFeedback(payload, user) {
+  const body = String(payload.body || "").trim();
+  const images = Array.isArray(payload.images) ? payload.images : [];
+  if (!body && !images.length) throw new Error("请填写反馈内容或上传图片");
+  if (images.length > MAX_FEEDBACK_IMAGES) throw new Error(`最多上传 ${MAX_FEEDBACK_IMAGES} 张图片`);
+  let totalBytes = 0;
+  const normalizedImages = images.map((image) => {
+    const dataUrl = String(image?.dataUrl || "");
+    if (!dataUrl.startsWith("data:image/")) throw new Error("反馈图片格式不支持");
+    const bytes = dataUrlBytes(dataUrl);
+    totalBytes += bytes;
+    if (bytes > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 3MB");
+    return { name: String(image?.name || "反馈图片"), dataUrl };
+  });
+  if (totalBytes > MAX_FEEDBACK_TOTAL_IMAGE_BYTES) throw new Error("反馈图片总大小不能超过 4MB");
+  return {
+    id: uid("fb"),
+    userId: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    body,
+    images: normalizedImages,
+    createdAt: now()
+  };
+}
+
 function validateUploads(payload) {
   const images = Array.isArray(payload.images) ? payload.images : [];
   for (const image of images) {
@@ -322,6 +356,7 @@ function filterMaterials(db, user, query) {
 
 async function handleApi(req, res) {
   const db = readDb();
+  ensureFeedbacks(db);
   const url = new URL(req.url, `http://${req.headers.host}`);
   const method = req.method;
 
@@ -367,6 +402,22 @@ async function handleApi(req, res) {
 
     if (url.pathname === "/api/materials" && method === "GET") {
       return send(res, 200, { materials: filterMaterials(db, user, url.searchParams) });
+    }
+
+    if (url.pathname === "/api/feedback" && method === "POST") {
+      const body = await readJson(req);
+      const feedback = normalizeFeedback(body, user);
+      db.feedbacks.unshift(feedback);
+      db.feedbacks = db.feedbacks.slice(0, 500);
+      audit(db, user, "create_feedback", feedback.id, feedback.body.slice(0, 80));
+      writeDb(db);
+      return send(res, 201, { feedback });
+    }
+
+    if (url.pathname === "/api/feedback" && method === "GET") {
+      const admin = requireAdmin(req, res, db);
+      if (!admin) return;
+      return send(res, 200, { feedbacks: ensureFeedbacks(db).slice(0, 300) });
     }
 
     if (url.pathname === "/api/materials/reorder" && method === "PUT") {

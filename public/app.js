@@ -3,6 +3,8 @@ const state = {
   materials: [],
   categories: [],
   tags: [],
+  feedbackImages: [],
+  feedbackDraft: "",
   selected: null,
   view: "library",
   filters: { q: "", category: "", tag: "" },
@@ -21,6 +23,11 @@ const state = {
 
 const app = document.querySelector("#app");
 let diagramReflowTimer = null;
+const feedbackLimits = {
+  maxImages: 6,
+  maxImageBytes: 3 * 1024 * 1024,
+  maxTotalImageBytes: 4 * 1024 * 1024
+};
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -581,7 +588,7 @@ function renderShell() {
 function renderTabs() {
   const tabs = [`<button class="tab ${state.view === "library" ? "active" : ""}" data-view="library">资料库</button>`];
   if (state.user.role === "admin") {
-    tabs.push(`<button class="tab ${["admin", "adminEditor"].includes(state.view) ? "active" : ""}" data-view="admin">管理后台</button>`);
+    tabs.push(`<button class="tab ${["admin", "adminEditor", "feedbacks"].includes(state.view) ? "active" : ""}" data-view="admin">管理后台</button>`);
     tabs.push(`<button class="tab ${state.view === "users" ? "active" : ""}" data-view="users">账号管理</button>`);
     tabs.push(`<button class="tab ${state.view === "logs" ? "active" : ""}" data-view="logs">操作日志</button>`);
   }
@@ -613,8 +620,131 @@ function renderFilters() {
       <button class="btn" data-action="applyFilters">筛选</button>
       <button class="btn secondary" data-action="clearFilters">清空</button>
       <div class="notice">普通员工只能看到已发布资料。</div>
+      ${renderFeedbackPanel()}
     </div>
   `;
+}
+
+function renderFeedbackPanel() {
+  if (state.user.role === "admin") {
+    return `
+      <div class="feedback-panel">
+        <div class="filter-heading compact">
+          <strong>员工反馈</strong>
+          <span>FEEDBACK</span>
+        </div>
+        <button class="btn secondary" type="button" data-view="feedbacks">查看员工反馈</button>
+      </div>
+    `;
+  }
+  return `
+    <form class="feedback-panel" id="feedbackForm">
+      <div class="filter-heading compact">
+        <strong>我要反馈</strong>
+        <span>FEEDBACK</span>
+      </div>
+      <label class="field">
+        <span>反馈内容</span>
+        <textarea name="body" data-feedback-body placeholder="请输入遇到的问题或建议">${escapeHtml(state.feedbackDraft)}</textarea>
+      </label>
+      <label class="file-pick">
+        <input type="file" data-feedback-images accept="image/*" multiple />
+        <span>上传图片</span>
+      </label>
+      <div class="feedback-preview" data-feedback-preview>
+        ${renderFeedbackPreview()}
+      </div>
+      <button class="btn" type="submit">提交反馈</button>
+      <div class="muted feedback-hint">最多 ${feedbackLimits.maxImages} 张图片，单张不超过 3MB。</div>
+      <div data-feedback-status></div>
+    </form>
+  `;
+}
+
+function renderFeedbackPreview() {
+  if (!state.feedbackImages.length) return `<div class="muted">还没有选择图片。</div>`;
+  return state.feedbackImages
+    .map(
+      (image, index) => `
+        <div class="feedback-preview-item">
+          <img src="${image.dataUrl}" alt="${escapeHtml(image.name)}" />
+          <span>${escapeHtml(image.name)}</span>
+          <button type="button" class="icon-btn" title="移除图片" data-remove-feedback-image="${index}">×</button>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function setFeedbackStatus(message, type = "") {
+  const target = document.querySelector("[data-feedback-status]");
+  if (!target) return;
+  target.innerHTML = message ? `<div class="${type === "error" ? "error" : "success"}">${escapeHtml(message)}</div>` : "";
+}
+
+function refreshFeedbackPreview() {
+  const target = document.querySelector("[data-feedback-preview]");
+  if (target) target.innerHTML = renderFeedbackPreview();
+  document.querySelectorAll("[data-remove-feedback-image]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.feedbackImages.splice(Number(button.dataset.removeFeedbackImage), 1);
+      refreshFeedbackPreview();
+    });
+  });
+}
+
+function bindFeedbackPanel() {
+  const form = document.querySelector("#feedbackForm");
+  if (!form) return;
+  form.querySelector("[data-feedback-body]")?.addEventListener("input", (event) => {
+    state.feedbackDraft = event.currentTarget.value;
+  });
+  form.querySelector("[data-feedback-images]")?.addEventListener("change", async (event) => {
+    setFeedbackStatus("");
+    try {
+      const incoming = Array.from(event.currentTarget.files || []);
+      if (state.feedbackImages.length + incoming.length > feedbackLimits.maxImages) {
+        throw new Error(`最多只能上传 ${feedbackLimits.maxImages} 张图片`);
+      }
+      const storedBytes = state.feedbackImages.reduce((sum, item) => sum + (item.size || Math.ceil(String(item.dataUrl || "").length * 0.75)), 0);
+      const totalBytes = storedBytes + incoming.reduce((sum, item) => sum + item.size, 0);
+      if (totalBytes > feedbackLimits.maxTotalImageBytes) throw new Error("反馈图片总大小不能超过 4MB");
+      for (const file of incoming) {
+        if (!file.type.startsWith("image/")) throw new Error("只能上传图片");
+        const image = await fileToDataUrl(file, feedbackLimits.maxImageBytes, "反馈图片");
+        image.size = file.size;
+        state.feedbackImages.push(image);
+      }
+      refreshFeedbackPreview();
+    } catch (error) {
+      setFeedbackStatus(error.message, "error");
+    } finally {
+      event.currentTarget.value = "";
+    }
+  });
+  refreshFeedbackPreview();
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setFeedbackStatus("");
+    const body = String(new FormData(form).get("body") || "").trim();
+    if (!body && !state.feedbackImages.length) {
+      setFeedbackStatus("请填写反馈内容或上传图片", "error");
+      return;
+    }
+    try {
+      await api("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({ body, images: state.feedbackImages })
+      });
+      state.feedbackDraft = "";
+      state.feedbackImages = [];
+      form.reset();
+      refreshFeedbackPreview();
+      setFeedbackStatus("反馈已提交，管理员可以在后台查看。");
+    } catch (error) {
+      setFeedbackStatus(error.message, "error");
+    }
+  });
 }
 
 function bindShell() {
@@ -642,6 +772,7 @@ function bindShell() {
     await loadBootstrap();
     renderShell();
   });
+  bindFeedbackPanel();
 }
 
 function renderMainView() {
@@ -654,6 +785,7 @@ function renderMainView() {
   else if (state.view === "admin") renderAdmin(target);
   else if (state.view === "users") renderUsers(target);
   else if (state.view === "logs") renderLogs(target);
+  else if (state.view === "feedbacks") renderFeedbacks(target);
   else renderLibrary(target);
 }
 
@@ -1889,6 +2021,47 @@ async function renderUsers(target) {
       }
     });
   });
+}
+
+async function renderFeedbacks(target) {
+  const data = await api("/api/feedback");
+  target.innerHTML = `
+    <section class="panel">
+      <div class="dashboard-head">
+        <div>
+          <h2>员工反馈</h2>
+          <p class="muted">员工提交的文字和图片反馈会按时间倒序展示。</p>
+        </div>
+      </div>
+      <div class="feedback-list">
+        ${
+          data.feedbacks.length
+            ? data.feedbacks
+                .map(
+                  (item) => `
+                    <article class="feedback-card">
+                      <div class="feedback-meta">
+                        <strong>${escapeHtml(item.displayName || item.username)}</strong>
+                        <span>${escapeHtml(item.username)}</span>
+                        <span>${formatDate(item.createdAt)}</span>
+                      </div>
+                      ${item.body ? `<p>${escapeHtml(item.body).replaceAll("\n", "<br>")}</p>` : ""}
+                      ${
+                        item.images?.length
+                          ? `<div class="feedback-images">${item.images
+                              .map((image) => `<a href="${image.dataUrl}" target="_blank" rel="noreferrer"><img src="${image.dataUrl}" alt="${escapeHtml(image.name)}" /></a>`)
+                              .join("")}</div>`
+                          : ""
+                      }
+                    </article>
+                  `
+                )
+                .join("")
+            : `<div class="empty">还没有员工反馈。</div>`
+        }
+      </div>
+    </section>
+  `;
 }
 
 async function renderLogs(target) {

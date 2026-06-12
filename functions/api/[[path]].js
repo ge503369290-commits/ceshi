@@ -1,6 +1,8 @@
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
-const MAX_JSON_BYTES = 6 * 1024 * 1024;
+const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_FEEDBACK_IMAGES = 6;
+const MAX_FEEDBACK_TOTAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
 const PASSWORD_HASH_ITERATIONS = 100000;
 const DB_KEY = "db";
@@ -146,7 +148,8 @@ async function seedDb(env) {
         updatedAt: now()
       }
     ],
-    auditLogs: []
+    auditLogs: [],
+    feedbacks: []
   };
 }
 
@@ -163,6 +166,11 @@ async function readDb(env) {
 
 async function writeDb(env, db) {
   await env.TRAINING_DB.put(DB_KEY, JSON.stringify(db));
+}
+
+function ensureFeedbacks(db) {
+  if (!Array.isArray(db.feedbacks)) db.feedbacks = [];
+  return db.feedbacks;
 }
 
 function json(payload, status = 200, headers = {}) {
@@ -236,6 +244,32 @@ async function readJson(req) {
 function dataUrlBytes(dataUrl) {
   const base64 = String(dataUrl || "").split(",")[1] || "";
   return fromBase64Url(base64.replaceAll("+", "-").replaceAll("/", "_")).byteLength;
+}
+
+function normalizeFeedback(payload, user) {
+  const body = String(payload.body || "").trim();
+  const images = Array.isArray(payload.images) ? payload.images : [];
+  if (!body && !images.length) throw new Error("请填写反馈内容或上传图片");
+  if (images.length > MAX_FEEDBACK_IMAGES) throw new Error(`最多上传 ${MAX_FEEDBACK_IMAGES} 张图片`);
+  let totalBytes = 0;
+  const normalizedImages = images.map((image) => {
+    const dataUrl = String(image?.dataUrl || "");
+    if (!dataUrl.startsWith("data:image/")) throw new Error("反馈图片格式不支持");
+    const bytes = dataUrlBytes(dataUrl);
+    totalBytes += bytes;
+    if (bytes > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 3MB");
+    return { name: String(image?.name || "反馈图片"), dataUrl };
+  });
+  if (totalBytes > MAX_FEEDBACK_TOTAL_IMAGE_BYTES) throw new Error("反馈图片总大小不能超过 4MB");
+  return {
+    id: uid("fb"),
+    userId: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    body,
+    images: normalizedImages,
+    createdAt: now()
+  };
 }
 
 function validateUploads(payload) {
@@ -325,6 +359,7 @@ function filterMaterials(db, user, query) {
 
 async function route(req, env) {
   const db = await readDb(env);
+  ensureFeedbacks(db);
   const url = new URL(req.url);
   const method = req.method;
   const pathname = url.pathname;
@@ -387,6 +422,20 @@ async function route(req, env) {
 
   if (pathname === "/api/materials" && method === "GET") {
     return json({ materials: filterMaterials(db, user, url.searchParams) });
+  }
+
+  if (pathname === "/api/feedback" && method === "POST") {
+    const feedback = normalizeFeedback(await readJson(req), user);
+    db.feedbacks.unshift(feedback);
+    db.feedbacks = db.feedbacks.slice(0, 500);
+    audit(db, user, "create_feedback", feedback.id, feedback.body.slice(0, 80));
+    await writeDb(env, db);
+    return json({ feedback }, 201);
+  }
+
+  if (pathname === "/api/feedback" && method === "GET") {
+    await requireAdmin(req, env, db);
+    return json({ feedbacks: ensureFeedbacks(db).slice(0, 300) });
   }
 
   if (pathname === "/api/materials/reorder" && method === "PUT") {
