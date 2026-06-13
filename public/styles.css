@@ -426,7 +426,7 @@ tr.drag-over {
 
 .text-style-controls {
   display: grid;
-  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
   gap: 12px;
   align-items: end;
   margin: 12px 0;
@@ -467,6 +467,41 @@ tr.drag-over {
 
 .color-swatch.active {
   border-color: var(--ink);
+}
+
+.rich-editor-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+}
+
+.rich-field {
+  display: grid;
+  gap: 8px;
+}
+
+.rich-editor {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--ink);
+  line-height: 1.7;
+  outline: 0;
+  white-space: pre-wrap;
+}
+
+.rich-editor:focus {
+  border-color: var(--primary);
+  outline: 1px solid var(--primary);
+}
+
+.rich-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
 }
 
 .content-image {

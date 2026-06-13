@@ -296,6 +296,24 @@ function normalizeTextStyle(style = {}) {
   };
 }
 
+function normalizeRichTextSegments(segments, fallbackBody = "", fallbackStyle = {}) {
+  const normalized = [];
+  if (Array.isArray(segments)) {
+    for (const segment of segments) {
+      const text = String(segment?.text || "");
+      if (!text) continue;
+      const style = normalizeTextStyle(segment);
+      const previous = normalized.at(-1);
+      if (previous && previous.fontSize === style.fontSize && previous.color === style.color) previous.text += text;
+      else normalized.push({ text, ...style });
+    }
+  }
+  if (!normalized.length && String(fallbackBody || "")) {
+    normalized.push({ text: String(fallbackBody || ""), ...normalizeTextStyle(fallbackStyle) });
+  }
+  return normalized;
+}
+
 function validateUploads(payload) {
   const images = Array.isArray(payload.images) ? payload.images : [];
   for (const image of images) {
@@ -320,17 +338,19 @@ function normalizeBlocks(payload) {
   return payload.blocks
     .map((block) => {
       if (block?.type === "image") {
+        const richText = normalizeRichTextSegments(block.richText, block.body, block.textStyle);
         return {
           type: "image",
-          body: String(block.body || ""),
+          body: richText.map((segment) => segment.text).join(""),
           image: block.image?.dataUrl ? { name: String(block.image.name || ""), dataUrl: String(block.image.dataUrl) } : null,
-          textStyle: normalizeTextStyle(block.textStyle)
+          richText
         };
       }
       if (block?.type === "mindmap") {
         return { type: "mindmap", mindmap: block.mindmap || payload.mindmap || null };
       }
-      return { type: "text", body: String(block?.body || ""), textStyle: normalizeTextStyle(block?.textStyle) };
+      const richText = normalizeRichTextSegments(block?.richText, block?.body, block?.textStyle);
+      return { type: "text", body: richText.map((segment) => segment.text).join(""), richText };
     })
     .filter((block) => block.type !== "text" || block.body.trim() || block.type === "mindmap");
 }

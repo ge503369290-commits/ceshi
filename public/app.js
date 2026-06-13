@@ -205,21 +205,32 @@ function serializeDiagram(diagram) {
 
 function createContentBlock(type, data = {}) {
   if (type === "image") {
-    return { id: clientId("block"), type: "image", body: String(data.body || ""), image: data.image || null, textStyle: normalizeTextStyle(data.textStyle) };
+    return {
+      id: clientId("block"),
+      type: "image",
+      body: String(data.body || ""),
+      image: data.image || null,
+      richText: normalizeRichTextSegments(data.richText, data.body, data.textStyle)
+    };
   }
   if (type === "mindmap") {
     return { id: clientId("block"), type: "mindmap" };
   }
-  return { id: clientId("block"), type: "text", body: String(data.body || ""), textStyle: normalizeTextStyle(data.textStyle) };
+  return {
+    id: clientId("block"),
+    type: "text",
+    body: String(data.body || ""),
+    richText: normalizeRichTextSegments(data.richText, data.body, data.textStyle)
+  };
 }
 
 function normalizeContentBlocks(material = {}) {
   if (Array.isArray(material.blocks) && material.blocks.length) {
     return material.blocks
       .map((block) => {
-        if (block.type === "image") return createContentBlock("image", { body: block.body || "", image: block.image || null, textStyle: block.textStyle });
+        if (block.type === "image") return createContentBlock("image", { body: block.body || "", image: block.image || null, richText: block.richText, textStyle: block.textStyle });
         if (block.type === "mindmap") return createContentBlock("mindmap");
-        return createContentBlock("text", { body: block.body || "", textStyle: block.textStyle });
+        return createContentBlock("text", { body: block.body || "", richText: block.richText, textStyle: block.textStyle });
       })
       .filter(Boolean);
   }
@@ -245,15 +256,21 @@ function resetMaterialDraft(material = null) {
 }
 
 function serializeContentBlocks() {
+  document.querySelectorAll("[data-block-rich]").forEach((editor) => {
+    const block = state.contentBlocks[Number(editor.dataset.blockRich)];
+    if (block) syncRichTextBlock(block, editor);
+  });
   return state.contentBlocks
     .map((block) => {
       if (block.type === "image") {
+        syncRichTextBlock(block);
         return block.image || String(block.body || "").trim()
-          ? { type: "image", body: String(block.body || ""), image: block.image || null, textStyle: normalizeTextStyle(block.textStyle) }
+          ? { type: "image", body: String(block.body || ""), image: block.image || null, richText: normalizeRichTextSegments(block.richText, block.body) }
           : null;
       }
       if (block.type === "mindmap") return { type: "mindmap", mindmap: serializeDiagram(state.mindmap) };
-      return { type: "text", body: String(block.body || ""), textStyle: normalizeTextStyle(block.textStyle) };
+      syncRichTextBlock(block);
+      return { type: "text", body: String(block.body || ""), richText: normalizeRichTextSegments(block.richText, block.body) };
     })
     .filter((block) => block && (block.type !== "text" || block.body.trim()));
 }
@@ -492,6 +509,49 @@ function normalizeTextStyle(style = {}) {
   };
 }
 
+function normalizeRichColor(value) {
+  const color = String(value || "").trim();
+  if (textStyleColors.includes(color)) return color;
+  const rgb = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/i);
+  if (!rgb) return "";
+  const hex = `#${rgb
+    .slice(1)
+    .map((part) => Number(part).toString(16).padStart(2, "0"))
+    .join("")}`;
+  return textStyleColors.includes(hex) ? hex : "";
+}
+
+function normalizeRichTextSegments(segments, fallbackBody = "", fallbackStyle = {}) {
+  const normalized = [];
+  if (Array.isArray(segments)) {
+    segments.forEach((segment) => {
+      const text = String(segment?.text || "");
+      if (!text) return;
+      const style = normalizeTextStyle(segment);
+      normalized.push({ text, ...style });
+    });
+  }
+  if (!normalized.length && String(fallbackBody || "")) {
+    normalized.push({ text: String(fallbackBody || ""), ...normalizeTextStyle(fallbackStyle) });
+  }
+  return mergeRichTextSegments(normalized);
+}
+
+function mergeRichTextSegments(segments = []) {
+  return segments.reduce((items, segment) => {
+    const normalized = { text: String(segment.text || ""), ...normalizeTextStyle(segment) };
+    if (!normalized.text) return items;
+    const previous = items.at(-1);
+    if (previous && previous.fontSize === normalized.fontSize && previous.color === normalized.color) previous.text += normalized.text;
+    else items.push(normalized);
+    return items;
+  }, []);
+}
+
+function richTextPlainText(segments = []) {
+  return normalizeRichTextSegments(segments).map((segment) => segment.text).join("");
+}
+
 function textStyleAttribute(style = {}) {
   const normalized = normalizeTextStyle(style);
   const rules = [];
@@ -500,29 +560,127 @@ function textStyleAttribute(style = {}) {
   return rules.length ? ` style="${rules.join(";")}"` : "";
 }
 
-function renderTextStyleControls(block, index) {
-  const style = normalizeTextStyle(block.textStyle);
+function renderRichTextSegments(segments = [], fallbackBody = "", fallbackStyle = {}) {
+  return normalizeRichTextSegments(segments, fallbackBody, fallbackStyle)
+    .map((segment) => {
+      const content = escapeHtml(segment.text).replaceAll("\n", "<br>");
+      const attrs = textStyleAttribute(segment);
+      return attrs ? `<span${attrs}>${content}</span>` : content;
+    })
+    .join("");
+}
+
+function renderRichTextControls(index) {
   return `
     <div class="text-style-controls" data-style-controls="${index}">
       <label class="field compact">
-        <span>字号</span>
-        <select data-block-font-size="${index}">
-          <option value="" ${style.fontSize ? "" : "selected"}>默认</option>
-          ${textStyleFontSizes.map((size) => `<option value="${size}" ${style.fontSize === size ? "selected" : ""}>${size}px</option>`).join("")}
+        <span>选中文字字号</span>
+        <select data-rich-font-size="${index}">
+          <option value="">字号</option>
+          ${textStyleFontSizes.map((size) => `<option value="${size}">${size}px</option>`).join("")}
         </select>
       </label>
       <div class="color-ring" aria-label="文字颜色">
-        <button type="button" class="color-swatch reset ${style.color ? "" : "active"}" title="默认颜色" data-block-color="${index}" data-color="">默认</button>
+        <button type="button" class="color-swatch reset" title="默认颜色" data-rich-color="${index}" data-color="">默认</button>
         ${textStyleColors
           .map(
             (color) => `
-              <button type="button" class="color-swatch ${style.color === color ? "active" : ""}" style="--swatch:${color}" title="${color}" data-block-color="${index}" data-color="${color}"></button>
+              <button type="button" class="color-swatch" style="--swatch:${color}" title="${color}" data-rich-color="${index}" data-color="${color}"></button>
             `
           )
           .join("")}
       </div>
+      <div class="muted rich-editor-hint">先选中文本，再修改字号或颜色。</div>
     </div>
   `;
+}
+
+function renderRichTextEditor(block, index, label, placeholder) {
+  return `
+    ${renderRichTextControls(index)}
+    <label class="field rich-field">
+      <span>${label}</span>
+      <div class="rich-editor" contenteditable="true" data-block-rich="${index}" data-placeholder="${escapeHtml(placeholder)}">${renderRichTextSegments(block.richText, block.body)}</div>
+    </label>
+  `;
+}
+
+function getRichTextStyleFromElement(element, inherited = {}) {
+  const style = {
+    fontSize: inherited.fontSize || "",
+    color: inherited.color || ""
+  };
+  if (element?.style?.fontSize) {
+    const size = parseInt(element.style.fontSize, 10);
+    if (textStyleFontSizes.includes(size)) style.fontSize = size;
+  }
+  if (element?.style?.color) style.color = normalizeRichColor(element.style.color) || style.color;
+  return style;
+}
+
+function readRichTextSegments(editor) {
+  const segments = [];
+  const append = (text, style = {}) => {
+    if (!text) return;
+    segments.push({ text, ...normalizeTextStyle(style) });
+  };
+  const walk = (node, inherited = {}) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      append(node.textContent, inherited);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const tag = node.tagName.toLowerCase();
+    if (tag === "br") {
+      append("\n", inherited);
+      return;
+    }
+    const nextStyle = getRichTextStyleFromElement(node, inherited);
+    node.childNodes.forEach((child) => walk(child, nextStyle));
+    if (["div", "p"].includes(tag) && segments.length && !segments.at(-1).text.endsWith("\n")) append("\n", nextStyle);
+  };
+  editor.childNodes.forEach((node) => walk(node, {}));
+  return mergeRichTextSegments(segments).map((segment, index, items) => {
+    if (index === items.length - 1) return { ...segment, text: segment.text.replace(/\n+$/, "") };
+    return segment;
+  }).filter((segment) => segment.text);
+}
+
+function syncRichTextBlock(block, editor = null) {
+  if (editor) block.richText = readRichTextSegments(editor);
+  block.richText = normalizeRichTextSegments(block.richText, block.body);
+  block.body = richTextPlainText(block.richText);
+}
+
+function applyRichTextStyle(index, patch = {}) {
+  const editor = document.querySelector(`[data-block-rich="${index}"]`);
+  if (!editor) return;
+  editor.focus();
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) {
+    setError("请先选中要修改的文字");
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  if (range.collapsed || !editor.contains(range.commonAncestorContainer)) {
+    setError("请先选中要修改的文字");
+    return;
+  }
+  setError("");
+  const text = range.toString();
+  const span = document.createElement("span");
+  const style = normalizeTextStyle(patch);
+  if (style.fontSize) span.style.fontSize = `${style.fontSize}px`;
+  if (style.color) span.style.color = style.color;
+  span.textContent = text;
+  range.deleteContents();
+  range.insertNode(span);
+  selection.removeAllRanges();
+  const nextRange = document.createRange();
+  nextRange.selectNodeContents(span);
+  nextRange.collapse(false);
+  selection.addRange(nextRange);
+  syncRichTextBlock(state.contentBlocks[index], editor);
 }
 
 async function loadBootstrap() {
@@ -1095,13 +1253,15 @@ function renderContentBlocks(blocks = [], material = {}) {
   return blocks
     .map((block) => {
       if (block.type === "image" && block.image?.dataUrl) {
-        return `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" />${block.body ? `<figcaption${textStyleAttribute(block.textStyle)}>${escapeHtml(block.body).replaceAll("\n", "<br>")}</figcaption>` : ""}</figure>`;
+        const caption = renderRichTextSegments(block.richText, block.body, block.textStyle);
+        return `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" />${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>`;
       }
       if (block.type === "mindmap") {
         const diagram = block.mindmap ? normalizeDiagram(block.mindmap) : normalizeDiagram(material.mindmap);
         return `<section class="content-diagram"><h2>${diagramTypeText(diagram.structure)}</h2>${renderDiagram(diagram)}</section>`;
       }
-      return block.body ? `<div class="body-text"${textStyleAttribute(block.textStyle)}>${escapeHtml(block.body).replaceAll("\n", "<br>")}</div>` : "";
+      const content = renderRichTextSegments(block.richText, block.body, block.textStyle);
+      return content ? `<div class="body-text">${content}</div>` : "";
     })
     .join("");
 }
@@ -1468,8 +1628,7 @@ function renderContentBlockEditorItem(block, index) {
     return `
       <div class="builder-block">
         ${controls}
-        ${renderTextStyleControls(block, index)}
-        <label class="field"><span>图片上方或下方的文字</span><textarea data-block-body="${index}" placeholder="这里可以写图片说明，也可以留空">${escapeHtml(block.body || "")}</textarea></label>
+        ${renderRichTextEditor(block, index, "图片上方或下方的文字", "这里可以写图片说明，也可以留空")}
         <label class="field"><span>图片，单张不超过 3MB</span><input type="file" accept="image/*" data-block-image="${index}" /></label>
         ${block.image?.dataUrl ? `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" /><button type="button" class="btn secondary" data-clear-block-image="${index}">移除图片</button></figure>` : ""}
       </div>
@@ -1488,8 +1647,7 @@ function renderContentBlockEditorItem(block, index) {
   return `
     <div class="builder-block">
       ${controls}
-      ${renderTextStyleControls(block, index)}
-      <label class="field"><span>文字内容</span><textarea data-block-body="${index}">${escapeHtml(block.body || "")}</textarea></label>
+      ${renderRichTextEditor(block, index, "文字内容", "请输入文字内容")}
     </div>
   `;
 }
@@ -2046,23 +2204,34 @@ function bindMaterialEditor() {
       renderMainView();
     });
   });
-  document.querySelectorAll("[data-block-body]").forEach((input) => {
-    input.addEventListener("input", () => {
-      state.contentBlocks[Number(input.dataset.blockBody)].body = input.value;
+  document.querySelectorAll("[data-block-rich]").forEach((editor) => {
+    const index = Number(editor.dataset.blockRich);
+    editor.addEventListener("input", () => {
+      syncRichTextBlock(state.contentBlocks[index], editor);
+    });
+    editor.addEventListener("paste", (event) => {
+      event.preventDefault();
+      const text = event.clipboardData?.getData("text/plain") || "";
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return;
+      const range = selection.getRangeAt(0);
+      if (!editor.contains(range.commonAncestorContainer)) return;
+      range.deleteContents();
+      range.insertNode(document.createTextNode(text));
+      selection.removeAllRanges();
+      selection.addRange(range);
+      syncRichTextBlock(state.contentBlocks[index], editor);
     });
   });
-  document.querySelectorAll("[data-block-font-size]").forEach((select) => {
+  document.querySelectorAll("[data-rich-font-size]").forEach((select) => {
     select.addEventListener("change", () => {
-      const block = state.contentBlocks[Number(select.dataset.blockFontSize)];
-      block.textStyle = normalizeTextStyle({ ...block.textStyle, fontSize: select.value });
+      applyRichTextStyle(Number(select.dataset.richFontSize), { fontSize: select.value });
+      select.value = "";
     });
   });
-  document.querySelectorAll("[data-block-color]").forEach((button) => {
+  document.querySelectorAll("[data-rich-color]").forEach((button) => {
     button.addEventListener("click", () => {
-      const block = state.contentBlocks[Number(button.dataset.blockColor)];
-      block.textStyle = normalizeTextStyle({ ...block.textStyle, color: button.dataset.color });
-      button.closest(".color-ring")?.querySelectorAll(".color-swatch").forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
+      applyRichTextStyle(Number(button.dataset.richColor), { color: button.dataset.color });
     });
   });
   document.querySelectorAll("[data-block-image]").forEach((input) => {
