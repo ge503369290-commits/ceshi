@@ -1759,6 +1759,122 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.compact-head {
+  padding-top: 32px;
+}
+
+.compressor-page {
+  display: grid;
+  gap: 24px;
+}
+
+.compressor-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.compressor-controls {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 0;
+}
+
+.compressor-drop {
+  min-height: 88px;
+  background: var(--soft);
+}
+
+.compressor-options {
+  display: grid;
+  gap: 10px;
+}
+
+.compressor-options input[type="range"] {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.compression-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+}
+
+.compression-metrics div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.compression-metrics div:nth-child(2n) {
+  border-right: 0;
+}
+
+.compression-metrics div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.compression-metrics span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compression-metrics strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-btn {
+  width: 100%;
+}
+
+.compressor-preview-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.compressor-preview {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.compressor-preview figcaption {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--body);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compressor-preview img {
+  width: 100%;
+  max-height: 560px;
+  object-fit: contain;
+  background: var(--soft);
+}
+
+.compressor-empty {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
 .icon-btn {
   display: grid;
   width: 28px;
@@ -1941,6 +2057,11 @@ textarea:focus {
   .section-head {
     display: grid;
     padding-top: 40px;
+  }
+
+  .compressor-grid,
+  .compressor-preview-panel {
+    grid-template-columns: 1fr;
   }
 
   .detail-hero,

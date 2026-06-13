@@ -5,6 +5,14 @@ const state = {
   tags: [],
   feedbackImages: [],
   feedbackDraft: "",
+  compressor: {
+    source: null,
+    result: null,
+    quality: 72,
+    maxWidth: 1600,
+    outputType: "image/webp",
+    status: ""
+  },
   selected: null,
   view: "library",
   filters: { q: "", category: "", tag: "" },
@@ -500,6 +508,140 @@ function fileToDataUrl(file, maxBytes, label) {
   });
 }
 
+function formatBytes(bytes = 0) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size >= 10 || unit === 0 ? Math.round(size) : size.toFixed(1)} ${units[unit]}`;
+}
+
+function revokeCompressorUrl(key) {
+  const item = state.compressor[key];
+  if (item?.url) URL.revokeObjectURL(item.url);
+}
+
+function resetCompressorResult() {
+  revokeCompressorUrl("result");
+  state.compressor.result = null;
+}
+
+function imageTypeExtension(type = "") {
+  return { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[type] || "jpg";
+}
+
+function compressedFileName(name = "image", type = "image/jpeg") {
+  const base = name.replace(/\.[^.]+$/, "") || "image";
+  return `${base}-compressed.${imageTypeExtension(type)}`;
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("图片读取失败"));
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("图片压缩失败"))), type, quality);
+  });
+}
+
+async function renderCompressedBlob(source, type, quality, widthLimit) {
+  const image = await loadImage(source.url);
+  const scale = Math.min(1, widthLimit / image.naturalWidth);
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  canvas.width = width;
+  canvas.height = height;
+  if (type === "image/jpeg") {
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+  }
+  context.drawImage(image, 0, 0, width, height);
+  const blob = await canvasToBlob(canvas, type, type === "image/png" ? undefined : quality);
+  return { blob, width, height };
+}
+
+async function compressCurrentImage() {
+  const source = state.compressor.source;
+  if (!source) return;
+  resetCompressorResult();
+  state.compressor.status = "正在压缩图片...";
+  renderMainView();
+  try {
+    const outputType = state.compressor.outputType;
+    const baseQuality = Math.max(35, Math.min(92, Number(state.compressor.quality) || 72)) / 100;
+    const sourceWidth = source.width || state.compressor.maxWidth;
+    let widthLimit = Math.min(sourceWidth, Math.max(320, Number(state.compressor.maxWidth) || 1600));
+    let quality = baseQuality;
+    let compressed = null;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      compressed = await renderCompressedBlob(source, outputType, quality, widthLimit);
+      if (compressed.blob.size < source.size || attempt === 4) break;
+      quality = Math.max(0.35, quality - 0.15);
+      widthLimit = Math.max(320, Math.floor(widthLimit * 0.85));
+    }
+
+    const url = URL.createObjectURL(compressed.blob);
+    const saved = source.size - compressed.blob.size;
+    state.compressor.result = {
+      url,
+      name: compressedFileName(source.name, outputType),
+      size: compressed.blob.size,
+      type: outputType,
+      width: compressed.width,
+      height: compressed.height,
+      saved,
+      savedPercent: source.size ? Math.max(0, Math.round((saved / source.size) * 100)) : 0
+    };
+    state.compressor.status = saved > 0 ? "压缩完成，可以下载新图片。" : "已生成压缩文件；这张图片本身已经很小，体积变化有限。";
+  } catch (error) {
+    state.compressor.status = error.message;
+  }
+  renderMainView();
+}
+
+async function selectCompressorImage(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    state.compressor.status = "只能上传图片文件。";
+    renderMainView();
+    return;
+  }
+  revokeCompressorUrl("source");
+  resetCompressorResult();
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(url);
+    state.compressor.source = {
+      url,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      width: image.naturalWidth,
+      height: image.naturalHeight
+    };
+    state.compressor.status = "";
+    await compressCurrentImage();
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    state.compressor.source = null;
+    state.compressor.status = error.message;
+    renderMainView();
+  }
+}
+
 function normalizeTextStyle(style = {}) {
   const fontSize = Number(style?.fontSize);
   const color = String(style?.color || "");
@@ -773,6 +915,7 @@ function renderLogin() {
 
 function renderShell() {
   const editorMode = state.view === "adminEditor";
+  const fullWidthMode = editorMode || state.view === "compressor";
   app.innerHTML = `
     <section class="shell">
       <div class="utility-bar">
@@ -796,8 +939,8 @@ function renderShell() {
           <button class="btn secondary" data-action="logout">退出</button>
         </div>
       </header>
-      <div class="layout ${editorMode ? "editor-layout" : ""}">
-        ${editorMode ? "" : `<aside class="sidebar">${renderFilters()}</aside>`}
+      <div class="layout ${fullWidthMode ? "editor-layout" : ""}">
+        ${fullWidthMode ? "" : `<aside class="sidebar">${renderFilters()}</aside>`}
         <section class="content">
           ${renderTabs()}
           <div id="mainView"></div>
@@ -810,7 +953,10 @@ function renderShell() {
 }
 
 function renderTabs() {
-  const tabs = [`<button class="tab ${state.view === "library" ? "active" : ""}" data-view="library">资料库</button>`];
+  const tabs = [
+    `<button class="tab ${state.view === "library" ? "active" : ""}" data-view="library">资料库</button>`,
+    `<button class="tab ${state.view === "compressor" ? "active" : ""}" data-view="compressor">图片压缩</button>`
+  ];
   if (state.user.role === "admin") {
     tabs.push(`<button class="tab ${["admin", "adminEditor", "feedbacks"].includes(state.view) ? "active" : ""}" data-view="admin">管理后台</button>`);
     tabs.push(`<button class="tab ${state.view === "users" ? "active" : ""}" data-view="users">账号管理</button>`);
@@ -970,6 +1116,37 @@ function bindFeedbackPanel() {
   });
 }
 
+function bindImageCompressor() {
+  document.querySelector("[data-compressor-file]")?.addEventListener("change", async (event) => {
+    await selectCompressorImage(event.currentTarget.files?.[0]);
+  });
+  document.querySelector("[data-compressor-output]")?.addEventListener("change", async (event) => {
+    state.compressor.outputType = event.currentTarget.value;
+    await compressCurrentImage();
+  });
+  document.querySelector("[data-compressor-quality]")?.addEventListener("input", (event) => {
+    state.compressor.quality = Number(event.currentTarget.value);
+    const label = event.currentTarget.closest(".field")?.querySelector("span");
+    if (label) label.textContent = `压缩质量：${state.compressor.quality}%`;
+  });
+  document.querySelector("[data-compressor-quality]")?.addEventListener("change", async (event) => {
+    state.compressor.quality = Number(event.currentTarget.value);
+    await compressCurrentImage();
+  });
+  document.querySelector("[data-compressor-width]")?.addEventListener("change", async (event) => {
+    state.compressor.maxWidth = Math.max(320, Math.min(6000, Number(event.currentTarget.value) || 1600));
+    await compressCurrentImage();
+  });
+  document.querySelector("[data-compressor-run]")?.addEventListener("click", compressCurrentImage);
+  document.querySelector("[data-compressor-clear]")?.addEventListener("click", () => {
+    revokeCompressorUrl("source");
+    resetCompressorResult();
+    state.compressor.source = null;
+    state.compressor.status = "";
+    renderMainView();
+  });
+}
+
 function bindShell() {
   document.querySelector('[data-action="logout"]').addEventListener("click", async () => {
     await api("/api/logout", { method: "POST", body: "{}" });
@@ -1005,11 +1182,87 @@ function renderMainView() {
     return;
   }
   if (state.view === "adminEditor") renderMaterialEditor(target);
+  else if (state.view === "compressor") renderImageCompressor(target);
   else if (state.view === "admin") renderAdmin(target);
   else if (state.view === "users") renderUsers(target);
   else if (state.view === "logs") renderLogs(target);
   else if (state.view === "feedbacks") renderFeedbacks(target);
   else renderLibrary(target);
+}
+
+function renderImageCompressor(target) {
+  const { source, result, quality, maxWidth, outputType, status } = state.compressor;
+  target.innerHTML = `
+    <section class="compressor-page">
+      <div class="section-head compact-head">
+        <div>
+          <h2>图片压缩</h2>
+          <p>上传本地图片后在浏览器内压缩，生成的新图片可以直接下载，不会上传到服务器。</p>
+        </div>
+      </div>
+      <div class="compressor-grid">
+        <section class="panel compressor-controls">
+          <label class="file-pick compressor-drop">
+            <input type="file" accept="image/*" data-compressor-file />
+            <span>${source ? "重新上传图片" : "上传图片"}</span>
+          </label>
+          <div class="compressor-options">
+            <label class="field">
+              <span>输出格式</span>
+              <select data-compressor-output>
+                <option value="image/webp" ${outputType === "image/webp" ? "selected" : ""}>WebP</option>
+                <option value="image/jpeg" ${outputType === "image/jpeg" ? "selected" : ""}>JPEG</option>
+                <option value="image/png" ${outputType === "image/png" ? "selected" : ""}>PNG</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>压缩质量：${quality}%</span>
+              <input type="range" min="35" max="92" step="1" value="${quality}" data-compressor-quality />
+            </label>
+            <label class="field">
+              <span>最大宽度</span>
+              <input type="number" min="320" max="6000" step="80" value="${maxWidth}" data-compressor-width />
+            </label>
+          </div>
+          <div class="row">
+            <button class="btn" type="button" data-compressor-run ${source ? "" : "disabled"}>重新压缩</button>
+            <button class="btn secondary" type="button" data-compressor-clear ${source ? "" : "disabled"}>清空</button>
+          </div>
+          ${status ? `<div class="${result ? "success" : status.includes("失败") || status.includes("只能") ? "error" : "notice"}">${escapeHtml(status)}</div>` : ""}
+          ${
+            source
+              ? `<div class="compression-metrics">
+                  <div><span>原图大小</span><strong>${formatBytes(source.size)}</strong></div>
+                  <div><span>原图尺寸</span><strong>${source.width} × ${source.height}</strong></div>
+                  <div><span>压缩后</span><strong>${result ? formatBytes(result.size) : "等待生成"}</strong></div>
+                  <div><span>缩减比例</span><strong>${result ? `${result.savedPercent}%` : "--"}</strong></div>
+                </div>`
+              : ""
+          }
+          ${result ? `<a class="btn download-btn" href="${result.url}" download="${escapeHtml(result.name)}">下载压缩图片</a>` : ""}
+        </section>
+        <section class="compressor-preview-panel">
+          ${
+            source
+              ? `<figure class="compressor-preview">
+                  <figcaption>原图：${escapeHtml(source.name)}</figcaption>
+                  <img src="${source.url}" alt="${escapeHtml(source.name)}" />
+                </figure>`
+              : `<div class="empty compressor-empty">选择一张图片后，这里会显示原图和压缩结果。</div>`
+          }
+          ${
+            result
+              ? `<figure class="compressor-preview">
+                  <figcaption>压缩后：${escapeHtml(result.name)} · ${result.width} × ${result.height}</figcaption>
+                  <img src="${result.url}" alt="${escapeHtml(result.name)}" />
+                </figure>`
+              : ""
+          }
+        </section>
+      </div>
+    </section>
+  `;
+  bindImageCompressor();
 }
 
 function renderLibrary(target) {
