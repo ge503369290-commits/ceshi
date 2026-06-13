@@ -3,8 +3,8 @@ import { onRequest as handleApiRequest } from "./functions/api/[[path]].js";
 const EMBEDDED_ASSETS = globalThis.__STATIC_ASSETS__ || {};
 const REMOTE_ASSET_URLS = {
   "/index.html": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/9d8185c0656746a5be628a9041800a117c54e645/index.html",
-  "/app.js": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/bb115e8922a23ab8f430862c8237d7f4f027c959/app.js?v=inline-richtext-20260613",
-  "/styles.css": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/1c042f0397bddfe3b22a8847d902dae1ecd6dafa/styles.css?v=inline-richtext-20260613"
+  "/app.js": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/a9f7b6801aac05ecd097e273384693e3b9098aa2/app.js?v=layout-notice-20260613",
+  "/styles.css": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/79b27e155d15eafa1020c4d699488f5c01e1daac/styles.css?v=layout-notice-20260613"
 };
 
 const STATIC_CACHE_HEADERS = {

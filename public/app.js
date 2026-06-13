@@ -843,7 +843,6 @@ function renderFilters() {
       </label>
       <button class="btn" data-action="applyFilters">筛选</button>
       <button class="btn secondary" data-action="clearFilters">清空</button>
-      <div class="notice">普通员工只能看到已发布资料。</div>
       ${renderFeedbackPanel()}
     </div>
   `;

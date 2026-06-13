@@ -1223,7 +1223,7 @@ body {
 }
 
 .content {
-  width: min(100%, 1344px);
+  width: 100%;
   min-width: 0;
   padding: 32px 48px 64px;
 }
