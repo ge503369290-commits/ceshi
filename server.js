@@ -13,6 +13,21 @@ const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_FEEDBACK_IMAGES = 6;
 const MAX_FEEDBACK_TOTAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
+const TEXT_STYLE_FONT_SIZES = [14, 16, 18, 20, 22, 24, 28, 32];
+const TEXT_STYLE_COLORS = [
+  "#ef4444",
+  "#f97316",
+  "#f59e0b",
+  "#eab308",
+  "#84cc16",
+  "#22c55e",
+  "#14b8a6",
+  "#06b6d4",
+  "#3b82f6",
+  "#6366f1",
+  "#8b5cf6",
+  "#d946ef"
+];
 
 const sessions = new Map();
 
@@ -268,6 +283,15 @@ function normalizeFeedback(payload, user) {
   };
 }
 
+function normalizeTextStyle(style = {}) {
+  const fontSize = Number(style?.fontSize);
+  const color = String(style?.color || "");
+  return {
+    fontSize: TEXT_STYLE_FONT_SIZES.includes(fontSize) ? fontSize : "",
+    color: TEXT_STYLE_COLORS.includes(color) ? color : ""
+  };
+}
+
 function validateUploads(payload) {
   const images = Array.isArray(payload.images) ? payload.images : [];
   for (const image of images) {
@@ -295,13 +319,14 @@ function normalizeBlocks(payload) {
         return {
           type: "image",
           body: String(block.body || ""),
-          image: block.image?.dataUrl ? { name: String(block.image.name || ""), dataUrl: String(block.image.dataUrl) } : null
+          image: block.image?.dataUrl ? { name: String(block.image.name || ""), dataUrl: String(block.image.dataUrl) } : null,
+          textStyle: normalizeTextStyle(block.textStyle)
         };
       }
       if (block?.type === "mindmap") {
         return { type: "mindmap", mindmap: block.mindmap || payload.mindmap || null };
       }
-      return { type: "text", body: String(block?.body || "") };
+      return { type: "text", body: String(block?.body || ""), textStyle: normalizeTextStyle(block?.textStyle) };
     })
     .filter((block) => block.type !== "text" || block.body.trim() || block.type === "mindmap");
 }

@@ -424,6 +424,51 @@ tr.drag-over {
   flex-wrap: wrap;
 }
 
+.text-style-controls {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.color-ring {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--swatch, #ffffff);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.color-swatch.reset {
+  width: auto;
+  min-width: 48px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.color-swatch.active {
+  border-color: var(--ink);
+}
+
 .content-image {
   margin: 14px 0;
 }
@@ -660,6 +705,62 @@ tr.drag-over {
   background: #fbfcff;
 }
 
+.diagram-view[data-readonly-diagram] {
+  display: grid;
+  grid-template-rows: auto minmax(320px, 1fr);
+  overflow: hidden;
+}
+
+.diagram-viewer-tools {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.diagram-zoom-field {
+  display: inline-flex;
+  align-items: center;
+  width: 92px;
+  min-height: 34px;
+  border: 1px solid #cfd6df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.diagram-zoom-field input {
+  width: 60px;
+  min-height: 32px;
+  padding: 0 4px 0 9px;
+  border: 0;
+  background: transparent;
+  text-align: right;
+}
+
+.diagram-zoom-field input:focus {
+  outline: 0;
+}
+
+.diagram-pan-viewport {
+  overflow: auto;
+  min-height: 320px;
+  cursor: grab;
+  scrollbar-width: thin;
+}
+
+.diagram-view.is-panning .diagram-pan-viewport {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .diagram-view.editable {
   width: 100%;
   height: 100%;
@@ -718,6 +819,10 @@ tr.drag-over {
   color: #172033;
   box-shadow: 0 10px 24px rgba(36, 56, 84, 0.12);
   cursor: move;
+}
+
+.diagram-view:not(.editable) .map-topic {
+  cursor: grab;
 }
 
 .map-topic.root {

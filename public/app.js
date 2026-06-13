@@ -28,6 +28,26 @@ const feedbackLimits = {
   maxImageBytes: 3 * 1024 * 1024,
   maxTotalImageBytes: 4 * 1024 * 1024
 };
+const textStyleFontSizes = [14, 16, 18, 20, 22, 24, 28, 32];
+const textStyleColors = [
+  "#ef4444",
+  "#f97316",
+  "#f59e0b",
+  "#eab308",
+  "#84cc16",
+  "#22c55e",
+  "#14b8a6",
+  "#06b6d4",
+  "#3b82f6",
+  "#6366f1",
+  "#8b5cf6",
+  "#d946ef"
+];
+const readOnlyDiagramZoom = {
+  min: 0.35,
+  max: 2.5,
+  step: 0.1
+};
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -185,21 +205,21 @@ function serializeDiagram(diagram) {
 
 function createContentBlock(type, data = {}) {
   if (type === "image") {
-    return { id: clientId("block"), type: "image", body: String(data.body || ""), image: data.image || null };
+    return { id: clientId("block"), type: "image", body: String(data.body || ""), image: data.image || null, textStyle: normalizeTextStyle(data.textStyle) };
   }
   if (type === "mindmap") {
     return { id: clientId("block"), type: "mindmap" };
   }
-  return { id: clientId("block"), type: "text", body: String(data.body || "") };
+  return { id: clientId("block"), type: "text", body: String(data.body || ""), textStyle: normalizeTextStyle(data.textStyle) };
 }
 
 function normalizeContentBlocks(material = {}) {
   if (Array.isArray(material.blocks) && material.blocks.length) {
     return material.blocks
       .map((block) => {
-        if (block.type === "image") return createContentBlock("image", { body: block.body || "", image: block.image || null });
+        if (block.type === "image") return createContentBlock("image", { body: block.body || "", image: block.image || null, textStyle: block.textStyle });
         if (block.type === "mindmap") return createContentBlock("mindmap");
-        return createContentBlock("text", { body: block.body || "" });
+        return createContentBlock("text", { body: block.body || "", textStyle: block.textStyle });
       })
       .filter(Boolean);
   }
@@ -227,9 +247,13 @@ function resetMaterialDraft(material = null) {
 function serializeContentBlocks() {
   return state.contentBlocks
     .map((block) => {
-      if (block.type === "image") return block.image || String(block.body || "").trim() ? { type: "image", body: String(block.body || ""), image: block.image || null } : null;
+      if (block.type === "image") {
+        return block.image || String(block.body || "").trim()
+          ? { type: "image", body: String(block.body || ""), image: block.image || null, textStyle: normalizeTextStyle(block.textStyle) }
+          : null;
+      }
       if (block.type === "mindmap") return { type: "mindmap", mindmap: serializeDiagram(state.mindmap) };
-      return { type: "text", body: String(block.body || "") };
+      return { type: "text", body: String(block.body || ""), textStyle: normalizeTextStyle(block.textStyle) };
     })
     .filter((block) => block && (block.type !== "text" || block.body.trim()));
 }
@@ -457,6 +481,48 @@ function fileToDataUrl(file, maxBytes, label) {
     reader.onerror = () => reject(new Error(`${label}读取失败`));
     reader.readAsDataURL(file);
   });
+}
+
+function normalizeTextStyle(style = {}) {
+  const fontSize = Number(style?.fontSize);
+  const color = String(style?.color || "");
+  return {
+    fontSize: textStyleFontSizes.includes(fontSize) ? fontSize : "",
+    color: textStyleColors.includes(color) ? color : ""
+  };
+}
+
+function textStyleAttribute(style = {}) {
+  const normalized = normalizeTextStyle(style);
+  const rules = [];
+  if (normalized.fontSize) rules.push(`font-size:${normalized.fontSize}px`);
+  if (normalized.color) rules.push(`color:${normalized.color}`);
+  return rules.length ? ` style="${rules.join(";")}"` : "";
+}
+
+function renderTextStyleControls(block, index) {
+  const style = normalizeTextStyle(block.textStyle);
+  return `
+    <div class="text-style-controls" data-style-controls="${index}">
+      <label class="field compact">
+        <span>字号</span>
+        <select data-block-font-size="${index}">
+          <option value="" ${style.fontSize ? "" : "selected"}>默认</option>
+          ${textStyleFontSizes.map((size) => `<option value="${size}" ${style.fontSize === size ? "selected" : ""}>${size}px</option>`).join("")}
+        </select>
+      </label>
+      <div class="color-ring" aria-label="文字颜色">
+        <button type="button" class="color-swatch reset ${style.color ? "" : "active"}" title="默认颜色" data-block-color="${index}" data-color="">默认</button>
+        ${textStyleColors
+          .map(
+            (color) => `
+              <button type="button" class="color-swatch ${style.color === color ? "active" : ""}" style="--swatch:${color}" title="${color}" data-block-color="${index}" data-color="${color}"></button>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 async function loadBootstrap() {
@@ -908,6 +974,7 @@ function renderDetail(target) {
     </article>
   `;
   fitReadOnlyDiagrams();
+  bindReadOnlyDiagrams();
   document.querySelector('[data-action="back"]').addEventListener("click", () => {
     state.selected = null;
     renderMainView();
@@ -916,17 +983,106 @@ function renderDetail(target) {
 
 function fitReadOnlyDiagrams() {
   document.querySelectorAll(".diagram-view:not(.editable)").forEach((view) => {
+    if (view.dataset.userZoom === "true") return;
+    setReadOnlyDiagramZoom(view, getReadOnlyDiagramFitZoom(view), { preserveScroll: false });
+  });
+}
+
+function clampReadOnlyZoom(value) {
+  return Math.min(readOnlyDiagramZoom.max, Math.max(readOnlyDiagramZoom.min, Number(value) || 1));
+}
+
+function getReadOnlyDiagramFitZoom(view) {
     const canvas = view.querySelector(".diagram-canvas");
-    const scaled = view.querySelector(".diagram-scaled");
-    if (!canvas || !scaled) return;
+  const viewport = view.querySelector(".diagram-pan-viewport") || view;
+  if (!canvas || !viewport) return 1;
     const layoutWidth = Number(canvas.dataset.layoutWidth);
-    const layoutHeight = Number(canvas.dataset.layoutHeight);
-    if (!layoutWidth || !layoutHeight) return;
-    const availableWidth = Math.max(320, view.clientWidth - 4);
-    const scale = Math.min(1, Math.max(0.25, availableWidth / layoutWidth));
-    scaled.style.transform = `scale(${scale})`;
-    canvas.style.width = `${layoutWidth * scale}px`;
-    canvas.style.height = `${layoutHeight * scale}px`;
+  if (!layoutWidth) return 1;
+  const availableWidth = Math.max(320, viewport.clientWidth - 24);
+  return clampReadOnlyZoom(Math.min(1, availableWidth / layoutWidth));
+}
+
+function setReadOnlyDiagramZoom(view, nextZoom, options = {}) {
+  const canvas = view.querySelector(".diagram-canvas");
+  const scaled = view.querySelector(".diagram-scaled");
+  const viewport = view.querySelector(".diagram-pan-viewport") || view;
+  if (!canvas || !scaled || !viewport) return;
+  const layoutWidth = Number(canvas.dataset.layoutWidth);
+  const layoutHeight = Number(canvas.dataset.layoutHeight);
+  if (!layoutWidth || !layoutHeight) return;
+  const previousZoom = Number(view.dataset.zoom) || 1;
+  const zoom = Math.round(clampReadOnlyZoom(nextZoom) * 100) / 100;
+  const rect = viewport.getBoundingClientRect();
+  const anchorX = options.anchor ? options.anchor.x - rect.left : viewport.clientWidth / 2;
+  const anchorY = options.anchor ? options.anchor.y - rect.top : viewport.clientHeight / 2;
+  const contentX = (viewport.scrollLeft + anchorX) / previousZoom;
+  const contentY = (viewport.scrollTop + anchorY) / previousZoom;
+  view.dataset.zoom = String(zoom);
+  scaled.style.transform = `scale(${zoom})`;
+  canvas.style.width = `${layoutWidth * zoom}px`;
+  canvas.style.height = `${layoutHeight * zoom}px`;
+  view.querySelector("[data-diagram-zoom-input]")?.setAttribute("value", String(Math.round(zoom * 100)));
+  const input = view.querySelector("[data-diagram-zoom-input]");
+  if (input) input.value = String(Math.round(zoom * 100));
+  if (options.preserveScroll !== false) {
+    viewport.scrollLeft = Math.max(0, contentX * zoom - anchorX);
+    viewport.scrollTop = Math.max(0, contentY * zoom - anchorY);
+  }
+}
+
+function bindReadOnlyDiagrams() {
+  document.querySelectorAll("[data-readonly-diagram]").forEach((view) => {
+    const viewport = view.querySelector(".diagram-pan-viewport");
+    if (!viewport || view.dataset.bound === "true") return;
+    view.dataset.bound = "true";
+    view.querySelectorAll("[data-diagram-view-zoom]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const current = Number(view.dataset.zoom) || getReadOnlyDiagramFitZoom(view);
+        view.dataset.userZoom = button.dataset.diagramViewZoom === "fit" ? "false" : "true";
+        if (button.dataset.diagramViewZoom === "in") setReadOnlyDiagramZoom(view, current + readOnlyDiagramZoom.step);
+        if (button.dataset.diagramViewZoom === "out") setReadOnlyDiagramZoom(view, current - readOnlyDiagramZoom.step);
+        if (button.dataset.diagramViewZoom === "reset") setReadOnlyDiagramZoom(view, 1);
+        if (button.dataset.diagramViewZoom === "fit") setReadOnlyDiagramZoom(view, getReadOnlyDiagramFitZoom(view), { preserveScroll: false });
+      });
+    });
+    view.querySelector("[data-diagram-zoom-input]")?.addEventListener("change", (event) => {
+      view.dataset.userZoom = "true";
+      setReadOnlyDiagramZoom(view, Number(event.currentTarget.value) / 100);
+    });
+    viewport.addEventListener(
+      "wheel",
+      (event) => {
+        if (!event.altKey) return;
+        event.preventDefault();
+        view.dataset.userZoom = "true";
+        const current = Number(view.dataset.zoom) || getReadOnlyDiagramFitZoom(view);
+        const direction = event.deltaY > 0 ? -1 : 1;
+        setReadOnlyDiagramZoom(view, current + direction * readOnlyDiagramZoom.step, { anchor: { x: event.clientX, y: event.clientY } });
+      },
+      { passive: false }
+    );
+    viewport.addEventListener("mousedown", (event) => {
+      if (event.button !== 0 || event.target.closest("button, input, select, textarea, a")) return;
+      event.preventDefault();
+      const start = {
+        x: event.clientX,
+        y: event.clientY,
+        scrollLeft: viewport.scrollLeft,
+        scrollTop: viewport.scrollTop
+      };
+      view.classList.add("is-panning");
+      const move = (moveEvent) => {
+        viewport.scrollLeft = start.scrollLeft - (moveEvent.clientX - start.x);
+        viewport.scrollTop = start.scrollTop - (moveEvent.clientY - start.y);
+      };
+      const up = () => {
+        view.classList.remove("is-panning");
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
   });
 }
 
@@ -939,13 +1095,13 @@ function renderContentBlocks(blocks = [], material = {}) {
   return blocks
     .map((block) => {
       if (block.type === "image" && block.image?.dataUrl) {
-        return `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" />${block.body ? `<figcaption>${escapeHtml(block.body).replaceAll("\n", "<br>")}</figcaption>` : ""}</figure>`;
+        return `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" />${block.body ? `<figcaption${textStyleAttribute(block.textStyle)}>${escapeHtml(block.body).replaceAll("\n", "<br>")}</figcaption>` : ""}</figure>`;
       }
       if (block.type === "mindmap") {
         const diagram = block.mindmap ? normalizeDiagram(block.mindmap) : normalizeDiagram(material.mindmap);
         return `<section class="content-diagram"><h2>${diagramTypeText(diagram.structure)}</h2>${renderDiagram(diagram)}</section>`;
       }
-      return block.body ? `<div class="body-text">${escapeHtml(block.body).replaceAll("\n", "<br>")}</div>` : "";
+      return block.body ? `<div class="body-text"${textStyleAttribute(block.textStyle)}>${escapeHtml(block.body).replaceAll("\n", "<br>")}</div>` : "";
     })
     .join("");
 }
@@ -1164,6 +1320,32 @@ function renderDiagramNodeTopic(item, layout, editable = false) {
 function renderDiagram(diagram, options = {}) {
   const layout = buildDiagramLayout(diagram);
   const zoom = options.editable ? state.diagramZoom : 1;
+  if (!options.editable) {
+    return `
+      <div class="diagram-view diagram-${escapeHtml(diagram.structure)}" data-readonly-diagram>
+        <div class="diagram-viewer-tools" aria-label="导图查看工具">
+          <button type="button" class="tool-btn" title="缩小" data-diagram-view-zoom="out">−</button>
+          <label class="diagram-zoom-field" title="自定义缩放百分比">
+            <input type="number" min="${Math.round(readOnlyDiagramZoom.min * 100)}" max="${Math.round(readOnlyDiagramZoom.max * 100)}" step="5" value="100" data-diagram-zoom-input />
+            <span>%</span>
+          </label>
+          <button type="button" class="tool-btn" title="放大" data-diagram-view-zoom="in">+</button>
+          <button type="button" class="tool-btn wide" title="适配宽度" data-diagram-view-zoom="fit">适配</button>
+          <button type="button" class="tool-btn wide" title="重置为 100%" data-diagram-view-zoom="reset">100%</button>
+        </div>
+        <div class="diagram-pan-viewport" tabindex="0">
+          <div class="diagram-canvas" data-layout-width="${layout.width}" data-layout-height="${layout.height}" style="width:${layout.width}px;height:${layout.height}px;">
+            <div class="diagram-scaled" style="width:${layout.width}px;height:${layout.height}px;transform:scale(1);">
+              <svg class="diagram-links" viewBox="0 0 ${layout.width} ${layout.height}" aria-hidden="true">
+                ${layout.links.map((link) => renderDiagramLink(link, layout)).join("")}
+              </svg>
+              ${layout.nodes.map((item) => renderDiagramNodeTopic(item, layout, false)).join("")}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
   return `
     <div class="diagram-view diagram-${escapeHtml(diagram.structure)} ${options.editable ? "editable" : ""}">
       <div class="diagram-canvas" data-layout-width="${layout.width}" data-layout-height="${layout.height}" style="width:${layout.width * zoom}px;height:${layout.height * zoom}px;">
@@ -1286,6 +1468,7 @@ function renderContentBlockEditorItem(block, index) {
     return `
       <div class="builder-block">
         ${controls}
+        ${renderTextStyleControls(block, index)}
         <label class="field"><span>图片上方或下方的文字</span><textarea data-block-body="${index}" placeholder="这里可以写图片说明，也可以留空">${escapeHtml(block.body || "")}</textarea></label>
         <label class="field"><span>图片，单张不超过 3MB</span><input type="file" accept="image/*" data-block-image="${index}" /></label>
         ${block.image?.dataUrl ? `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" /><button type="button" class="btn secondary" data-clear-block-image="${index}">移除图片</button></figure>` : ""}
@@ -1305,6 +1488,7 @@ function renderContentBlockEditorItem(block, index) {
   return `
     <div class="builder-block">
       ${controls}
+      ${renderTextStyleControls(block, index)}
       <label class="field"><span>文字内容</span><textarea data-block-body="${index}">${escapeHtml(block.body || "")}</textarea></label>
     </div>
   `;
@@ -1865,6 +2049,20 @@ function bindMaterialEditor() {
   document.querySelectorAll("[data-block-body]").forEach((input) => {
     input.addEventListener("input", () => {
       state.contentBlocks[Number(input.dataset.blockBody)].body = input.value;
+    });
+  });
+  document.querySelectorAll("[data-block-font-size]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const block = state.contentBlocks[Number(select.dataset.blockFontSize)];
+      block.textStyle = normalizeTextStyle({ ...block.textStyle, fontSize: select.value });
+    });
+  });
+  document.querySelectorAll("[data-block-color]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const block = state.contentBlocks[Number(button.dataset.blockColor)];
+      block.textStyle = normalizeTextStyle({ ...block.textStyle, color: button.dataset.color });
+      button.closest(".color-ring")?.querySelectorAll(".color-swatch").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
     });
   });
   document.querySelectorAll("[data-block-image]").forEach((input) => {

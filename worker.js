@@ -3,8 +3,8 @@ import { onRequest as handleApiRequest } from "./functions/api/[[path]].js";
 const EMBEDDED_ASSETS = globalThis.__STATIC_ASSETS__ || {};
 const REMOTE_ASSET_URLS = {
   "/index.html": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/9d8185c0656746a5be628a9041800a117c54e645/index.html",
-  "/app.js": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/3447e21de04820002507fbc342e4c09defb32f19/app.js?v=feedback-20260612",
-  "/styles.css": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/b062ce5b6d55b009c9d7014d4de6db8fbfe1ec3d/styles.css?v=feedback-20260612"
+  "/app.js": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/661ca38011953490b7f30e1936baca79e51e1c82/app.js?v=mindmap-zoom-textstyle-20260613",
+  "/styles.css": "https://gist.githubusercontent.com/ge503369290-commits/646125b1043b88fffa2b673d41972413/raw/e8de3d0591a4219046c6c87a4d39f60d9b1b9361/styles.css?v=mindmap-zoom-textstyle-20260613"
 };
 
 const STATIC_CACHE_HEADERS = {
