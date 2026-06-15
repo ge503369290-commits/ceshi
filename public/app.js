@@ -26,7 +26,12 @@ const state = {
   diagramChecked: new Set(),
   diagramClipboard: null,
   diagramCutPath: "",
-  diagramZoom: 1
+  diagramZoom: 1,
+  imagePreview: {
+    images: [],
+    index: 0,
+    zoom: 1
+  }
 };
 
 const app = document.querySelector("#app");
@@ -1370,7 +1375,7 @@ function renderLibrary(target) {
               <h3>${escapeHtml(item.title)}</h3>
               <p>${escapeHtml(item.body || "暂无文字说明")}</p>
               <div class="meta">${(item.tags || []).map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
-              <div class="row">
+              <div class="row card-actions">
                 <button class="btn" data-open="${item.id}">查看</button>
                 ${
                   state.user.role === "admin"
@@ -1428,6 +1433,7 @@ function bindMaterialActions() {
 function renderDetail(target) {
   const item = state.selected;
   const blocks = normalizeContentBlocks(item);
+  const previewImages = collectContentImages(blocks);
   target.innerHTML = `
     <article class="detail detail-page">
       <section class="detail-hero">
@@ -1446,13 +1452,115 @@ function renderDetail(target) {
         ${renderVideo(item.video)}
       </div>
     </article>
+    ${renderImagePreviewOverlay()}
   `;
   fitReadOnlyDiagrams();
   bindReadOnlyDiagrams();
+  bindImagePreview(previewImages);
   document.querySelector('[data-action="back"]').addEventListener("click", () => {
     state.selected = null;
+    closeImagePreview();
     renderMainView();
   });
+}
+
+function renderImagePreviewOverlay() {
+  return `
+    <div class="image-preview-overlay" data-image-preview hidden>
+      <button class="image-preview-close" type="button" data-preview-close aria-label="关闭预览">×</button>
+      <button class="image-preview-nav prev" type="button" data-preview-step="-1" aria-label="上一张图片">‹</button>
+      <figure class="image-preview-stage">
+        <img data-preview-image alt="" />
+        <figcaption>
+          <span data-preview-name></span>
+          <span data-preview-count></span>
+          <span data-preview-zoom></span>
+        </figcaption>
+      </figure>
+      <button class="image-preview-nav next" type="button" data-preview-step="1" aria-label="下一张图片">›</button>
+    </div>
+  `;
+}
+
+function openImagePreview(images, index = 0) {
+  state.imagePreview = {
+    images: images.filter((image) => image?.dataUrl),
+    index,
+    zoom: 1
+  };
+  updateImagePreviewOverlay();
+}
+
+function closeImagePreview() {
+  state.imagePreview.images = [];
+  state.imagePreview.index = 0;
+  state.imagePreview.zoom = 1;
+  updateImagePreviewOverlay();
+}
+
+function stepImagePreview(direction) {
+  const total = state.imagePreview.images.length;
+  if (!total) return;
+  state.imagePreview.index = (state.imagePreview.index + direction + total) % total;
+  state.imagePreview.zoom = 1;
+  updateImagePreviewOverlay();
+}
+
+function zoomImagePreview(delta) {
+  if (!state.imagePreview.images.length) return;
+  const next = Math.max(0.5, Math.min(4, state.imagePreview.zoom + delta));
+  state.imagePreview.zoom = Math.round(next * 10) / 10;
+  updateImagePreviewOverlay();
+}
+
+function updateImagePreviewOverlay() {
+  const overlay = document.querySelector("[data-image-preview]");
+  if (!overlay) return;
+  const { images, index, zoom } = state.imagePreview;
+  const image = images[index];
+  overlay.hidden = !image;
+  document.body.classList.toggle("preview-open", Boolean(image));
+  if (!image) return;
+  const img = overlay.querySelector("[data-preview-image]");
+  img.src = image.dataUrl;
+  img.alt = image.name || "图片预览";
+  img.style.transform = `scale(${zoom})`;
+  overlay.querySelector("[data-preview-name]").textContent = image.name || "图片预览";
+  overlay.querySelector("[data-preview-count]").textContent = `${index + 1} / ${images.length}`;
+  overlay.querySelector("[data-preview-zoom]").textContent = `${Math.round(zoom * 100)}%`;
+  overlay.querySelectorAll("[data-preview-step]").forEach((button) => {
+    button.disabled = images.length < 2;
+  });
+}
+
+function handleImagePreviewKeydown(event) {
+  if (!state.imagePreview.images.length) return;
+  if (event.key === "Escape") closeImagePreview();
+  if (event.key === "ArrowLeft") stepImagePreview(-1);
+  if (event.key === "ArrowRight") stepImagePreview(1);
+}
+
+function bindImagePreview(images) {
+  document.querySelectorAll("[data-preview-index]").forEach((button) => {
+    button.addEventListener("click", () => openImagePreview(images, Number(button.dataset.previewIndex)));
+  });
+  document.querySelector("[data-preview-close]")?.addEventListener("click", closeImagePreview);
+  document.querySelector("[data-image-preview]")?.addEventListener("click", (event) => {
+    if (event.target.matches("[data-image-preview]")) closeImagePreview();
+  });
+  document.querySelector("[data-image-preview]")?.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      zoomImagePreview(event.deltaY < 0 ? 0.2 : -0.2);
+    },
+    { passive: false }
+  );
+  document.querySelectorAll("[data-preview-step]").forEach((button) => {
+    button.addEventListener("click", () => stepImagePreview(Number(button.dataset.previewStep)));
+  });
+  document.removeEventListener("keydown", handleImagePreviewKeydown);
+  document.addEventListener("keydown", handleImagePreviewKeydown);
 }
 
 function fitReadOnlyDiagrams() {
@@ -1565,24 +1673,39 @@ function renderImages(images = []) {
   return `<div class="media-list">${images.map((img) => `<img src="${img.dataUrl}" alt="${escapeHtml(img.name || "图片")}" />`).join("")}</div>`;
 }
 
-function renderContentImageGrid(images = []) {
+function collectContentImages(blocks = []) {
+  return blocks.flatMap((block) => (block.type === "image" ? normalizeBlockImages(block) : [])).filter((image) => image?.dataUrl);
+}
+
+function renderContentImageGrid(images = [], startIndex = 0) {
   const items = images.filter((image) => image?.dataUrl);
   if (!items.length) return "";
   return `
     <div class="content-image-grid ${items.length === 1 ? "single" : ""}">
-      ${items.map((image) => `<img src="${image.dataUrl}" alt="${escapeHtml(image.name || "图片")}" />`).join("")}
+      ${items
+        .map(
+          (image, index) => `
+            <button class="image-preview-trigger" type="button" data-preview-index="${startIndex + index}" aria-label="预览图片：${escapeHtml(image.name || "图片")}">
+              <img src="${image.dataUrl}" alt="${escapeHtml(image.name || "图片")}" />
+            </button>
+          `
+        )
+        .join("")}
     </div>
   `;
 }
 
 function renderContentBlocks(blocks = [], material = {}) {
+  let previewIndex = 0;
   return blocks
     .map((block) => {
       if (block.type === "image") {
         const images = normalizeBlockImages(block);
         const caption = renderRichTextSegments(block.richText, block.body, block.textStyle);
         if (!images.length) return caption ? `<div class="body-text">${caption}</div>` : "";
-        return `<figure class="content-image">${renderContentImageGrid(images)}${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>`;
+        const startIndex = previewIndex;
+        previewIndex += images.length;
+        return `<figure class="content-image">${renderContentImageGrid(images, startIndex)}${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>`;
       }
       if (block.type === "mindmap") {
         const diagram = block.mindmap ? normalizeDiagram(block.mindmap) : normalizeDiagram(material.mindmap);
