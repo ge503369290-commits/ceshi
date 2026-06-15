@@ -10,7 +10,7 @@ const state = {
     result: null,
     quality: 72,
     maxWidth: 1600,
-    outputType: "image/webp",
+    outputType: "image/jpeg",
     status: ""
   },
   selected: null,
@@ -211,13 +211,28 @@ function serializeDiagram(diagram) {
   return applyCurrentLayoutGeometry(syncRenderedDiagramGeometry(diagram));
 }
 
+function normalizeBlockImages(block = {}) {
+  const images = Array.isArray(block.images) ? [...block.images] : [];
+  if (block.image) images.unshift(block.image);
+  const seen = new Set();
+  return images.filter((image) => {
+    if (!image?.dataUrl) return false;
+    const key = `${image.name || ""}:${image.dataUrl}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function createContentBlock(type, data = {}) {
   if (type === "image") {
+    const images = normalizeBlockImages(data).slice(0, 9);
     return {
       id: clientId("block"),
       type: "image",
       body: String(data.body || ""),
-      image: data.image || null,
+      image: images[0] || null,
+      images,
       richText: normalizeRichTextSegments(data.richText, data.body, data.textStyle)
     };
   }
@@ -236,7 +251,7 @@ function normalizeContentBlocks(material = {}) {
   if (Array.isArray(material.blocks) && material.blocks.length) {
     return material.blocks
       .map((block) => {
-        if (block.type === "image") return createContentBlock("image", { body: block.body || "", image: block.image || null, richText: block.richText, textStyle: block.textStyle });
+        if (block.type === "image") return createContentBlock("image", { body: block.body || "", image: block.image || null, images: block.images, richText: block.richText, textStyle: block.textStyle });
         if (block.type === "mindmap") return createContentBlock("mindmap");
         return createContentBlock("text", { body: block.body || "", richText: block.richText, textStyle: block.textStyle });
       })
@@ -272,8 +287,9 @@ function serializeContentBlocks() {
     .map((block) => {
       if (block.type === "image") {
         syncRichTextBlock(block);
-        return block.image || String(block.body || "").trim()
-          ? { type: "image", body: String(block.body || ""), image: block.image || null, richText: normalizeRichTextSegments(block.richText, block.body) }
+        const images = normalizeBlockImages(block).slice(0, 9);
+        return images.length || String(block.body || "").trim()
+          ? { type: "image", body: String(block.body || ""), image: images[0] || null, images, richText: normalizeRichTextSegments(block.richText, block.body) }
           : null;
       }
       if (block.type === "mindmap") return { type: "mindmap", mindmap: serializeDiagram(state.mindmap) };
@@ -1210,8 +1226,8 @@ function renderImageCompressor(target) {
             <label class="field">
               <span>输出格式</span>
               <select data-compressor-output>
-                <option value="image/webp" ${outputType === "image/webp" ? "selected" : ""}>WebP</option>
                 <option value="image/jpeg" ${outputType === "image/jpeg" ? "selected" : ""}>JPEG</option>
+                <option value="image/webp" ${outputType === "image/webp" ? "selected" : ""}>WebP</option>
                 <option value="image/png" ${outputType === "image/png" ? "selected" : ""}>PNG</option>
               </select>
             </label>
@@ -1501,12 +1517,24 @@ function renderImages(images = []) {
   return `<div class="media-list">${images.map((img) => `<img src="${img.dataUrl}" alt="${escapeHtml(img.name || "图片")}" />`).join("")}</div>`;
 }
 
+function renderContentImageGrid(images = []) {
+  const items = images.filter((image) => image?.dataUrl);
+  if (!items.length) return "";
+  return `
+    <div class="content-image-grid ${items.length === 1 ? "single" : ""}">
+      ${items.map((image) => `<img src="${image.dataUrl}" alt="${escapeHtml(image.name || "图片")}" />`).join("")}
+    </div>
+  `;
+}
+
 function renderContentBlocks(blocks = [], material = {}) {
   return blocks
     .map((block) => {
-      if (block.type === "image" && block.image?.dataUrl) {
+      if (block.type === "image") {
+        const images = normalizeBlockImages(block);
         const caption = renderRichTextSegments(block.richText, block.body, block.textStyle);
-        return `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" />${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>`;
+        if (!images.length) return caption ? `<div class="body-text">${caption}</div>` : "";
+        return `<figure class="content-image">${renderContentImageGrid(images)}${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>`;
       }
       if (block.type === "mindmap") {
         const diagram = block.mindmap ? normalizeDiagram(block.mindmap) : normalizeDiagram(material.mindmap);
@@ -1866,6 +1894,26 @@ function renderContentBlockEditor() {
   `;
 }
 
+function renderBlockImageEditorPreview(block, blockIndex) {
+  const images = normalizeBlockImages(block);
+  if (!images.length) return "";
+  return `
+    <div class="content-image editor-image-list">
+      ${images
+        .map(
+          (image, imageIndex) => `
+            <figure class="editor-image-item">
+              <img src="${image.dataUrl}" alt="${escapeHtml(image.name || "图片")}" />
+              <figcaption>${escapeHtml(image.name || "图片")}</figcaption>
+              <button type="button" class="btn secondary" data-clear-block-image="${blockIndex}" data-image-index="${imageIndex}">移除图片</button>
+            </figure>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderContentBlockEditorItem(block, index) {
   const controls = `
     <div class="block-controls">
@@ -1881,8 +1929,8 @@ function renderContentBlockEditorItem(block, index) {
       <div class="builder-block">
         ${controls}
         ${renderRichTextEditor(block, index, "图片上方或下方的文字", "这里可以写图片说明，也可以留空")}
-        <label class="field"><span>图片，单张不超过 3MB</span><input type="file" accept="image/*" data-block-image="${index}" /></label>
-        ${block.image?.dataUrl ? `<figure class="content-image"><img src="${block.image.dataUrl}" alt="${escapeHtml(block.image.name || "图片")}" /><button type="button" class="btn secondary" data-clear-block-image="${index}">移除图片</button></figure>` : ""}
+        <label class="field"><span>图片，可多选，最多 9 张，单张不超过 3MB</span><input type="file" accept="image/*" multiple data-block-image="${index}" /></label>
+        ${renderBlockImageEditorPreview(block, index)}
       </div>
     `;
   }
@@ -2489,21 +2537,36 @@ function bindMaterialEditor() {
   document.querySelectorAll("[data-block-image]").forEach((input) => {
     input.addEventListener("change", async () => {
       setError("");
-      const file = input.files?.[0];
-      if (!file) return;
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
       try {
-        state.contentBlocks[Number(input.dataset.blockImage)].image = await fileToDataUrl(file, 3 * 1024 * 1024, "图片");
+        if (files.length > 9) throw new Error("一次最多选择 9 张图片");
+        const block = state.contentBlocks[Number(input.dataset.blockImage)];
+        const images = normalizeBlockImages(block);
+        if (images.length + files.length > 9) throw new Error("一个图文模块最多上传 9 张图片");
+        for (const file of files) {
+          if (!file.type.startsWith("image/")) throw new Error("只能上传图片");
+          images.push(await fileToDataUrl(file, 3 * 1024 * 1024, "图片"));
+        }
+        block.images = images;
+        block.image = images[0] || null;
         rememberMaterialForm();
         renderMainView();
       } catch (error) {
         setError(error.message);
+      } finally {
+        input.value = "";
       }
     });
   });
   document.querySelectorAll("[data-clear-block-image]").forEach((button) => {
     button.addEventListener("click", () => {
       rememberMaterialForm();
-      state.contentBlocks[Number(button.dataset.clearBlockImage)].image = null;
+      const block = state.contentBlocks[Number(button.dataset.clearBlockImage)];
+      const images = normalizeBlockImages(block);
+      images.splice(Number(button.dataset.imageIndex), 1);
+      block.images = images;
+      block.image = images[0] || null;
       renderMainView();
     });
   });
@@ -2539,7 +2602,7 @@ function bindMaterialEditor() {
       .map((block) => block.body || "")
       .filter(Boolean)
       .join("\n\n");
-    const images = blocks.filter((block) => block.type === "image" && block.image).map((block) => block.image);
+    const images = blocks.flatMap((block) => (block.type === "image" ? normalizeBlockImages(block) : []));
     const mindmapBlock = blocks.find((block) => block.type === "mindmap");
     const payload = {
       title: form.get("title"),

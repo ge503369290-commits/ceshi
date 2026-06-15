@@ -508,7 +508,18 @@ tr.drag-over {
   margin: 14px 0;
 }
 
-.content-image img {
+.content-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.content-image-grid.single {
+  grid-template-columns: 1fr;
+}
+
+.content-image img,
+.editor-image-item img {
   width: 100%;
   max-height: 520px;
   object-fit: contain;
@@ -521,6 +532,34 @@ tr.drag-over {
   margin-top: 8px;
   color: var(--muted);
   line-height: 1.65;
+}
+
+.editor-image-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.editor-image-item {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+.editor-image-item img {
+  aspect-ratio: 4 / 3;
+  max-height: none;
+  object-fit: cover;
+}
+
+.editor-image-item figcaption {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .content-diagram {
