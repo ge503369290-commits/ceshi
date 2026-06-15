@@ -1,5 +1,5 @@
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
-const MAX_JSON_BYTES = 8 * 1024 * 1024;
+const MAX_JSON_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_FEEDBACK_IMAGES = 6;
 const MAX_FEEDBACK_TOTAL_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -261,6 +261,23 @@ function dataUrlBytes(dataUrl) {
   return fromBase64Url(base64.replaceAll("+", "-").replaceAll("/", "_")).byteLength;
 }
 
+function normalizeImageList(source = {}) {
+  const images = [];
+  if (source.image) images.push(source.image);
+  if (Array.isArray(source.images)) images.push(...source.images);
+  const seen = new Set();
+  return images
+    .map((image) => ({ name: String(image?.name || ""), dataUrl: String(image?.dataUrl || "") }))
+    .filter((image) => {
+      if (!image.dataUrl) return false;
+      const key = `${image.name}:${image.dataUrl}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 9);
+}
+
 function normalizeFeedback(payload, user) {
   const body = String(payload.body || "").trim();
   const images = Array.isArray(payload.images) ? payload.images : [];
@@ -322,6 +339,12 @@ function validateUploads(payload) {
   }
   const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
   for (const block of blocks) {
+    if (block?.type === "image" && Array.isArray(block.images)) {
+      for (const image of normalizeImageList(block)) {
+        if (!String(image.dataUrl || "").startsWith("data:image/")) throw new Error("Image format is not supported");
+        if (dataUrlBytes(image.dataUrl) > MAX_IMAGE_BYTES) throw new Error("Each image must be 3MB or smaller");
+      }
+    }
     if (block?.type === "image" && block.image?.dataUrl) {
       if (!String(block.image.dataUrl || "").startsWith("data:image/")) throw new Error("图片格式不支持");
       if (dataUrlBytes(block.image.dataUrl) > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 3MB");
@@ -339,10 +362,12 @@ function normalizeBlocks(payload) {
     .map((block) => {
       if (block?.type === "image") {
         const richText = normalizeRichTextSegments(block.richText, block.body, block.textStyle);
+        const images = normalizeImageList(block);
         return {
           type: "image",
           body: richText.map((segment) => segment.text).join(""),
-          image: block.image?.dataUrl ? { name: String(block.image.name || ""), dataUrl: String(block.image.dataUrl) } : null,
+          image: images[0] || null,
+          images,
           richText
         };
       }
@@ -357,6 +382,8 @@ function normalizeBlocks(payload) {
 
 function normalizeMaterial(payload, existing = {}) {
   validateUploads(payload);
+  const blocks = normalizeBlocks(payload);
+  const images = Array.isArray(payload.images) && payload.images.length ? payload.images : blocks.flatMap((block) => (block.type === "image" ? normalizeImageList(block) : []));
   const title = String(payload.title || "").trim();
   if (!title) throw new Error("标题不能为空");
   const category = String(payload.category || "").trim();
@@ -380,10 +407,10 @@ function normalizeMaterial(payload, existing = {}) {
     status: payload.status === "draft" ? "draft" : "published",
     type: payload.type || "text",
     body: String(payload.body || ""),
-    images: Array.isArray(payload.images) ? payload.images : [],
+    images,
     video,
     mindmap: payload.mindmap || null,
-    blocks: normalizeBlocks(payload),
+    blocks,
     updatedAt: now()
   };
 }

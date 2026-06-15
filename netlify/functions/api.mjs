@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { getDeployStore, getStore } from "@netlify/blobs";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
-const MAX_JSON_BYTES = 6 * 1024 * 1024;
+const MAX_JSON_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
 const DB_KEY = "db.json";
@@ -238,6 +238,23 @@ function dataUrlBytes(dataUrl) {
   return Buffer.byteLength(base64, "base64");
 }
 
+function normalizeImageList(source = {}) {
+  const images = [];
+  if (source.image) images.push(source.image);
+  if (Array.isArray(source.images)) images.push(...source.images);
+  const seen = new Set();
+  return images
+    .map((image) => ({ name: String(image?.name || ""), dataUrl: String(image?.dataUrl || "") }))
+    .filter((image) => {
+      if (!image.dataUrl) return false;
+      const key = `${image.name}:${image.dataUrl}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 9);
+}
+
 function validateUploads(payload) {
   const images = Array.isArray(payload.images) ? payload.images : [];
   for (const image of images) {
@@ -246,9 +263,11 @@ function validateUploads(payload) {
   }
   const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
   for (const block of blocks) {
-    if (block?.type === "image" && block.image?.dataUrl) {
-      if (!String(block.image.dataUrl || "").startsWith("data:image/")) throw new Error("图片格式不支持");
-      if (dataUrlBytes(block.image.dataUrl) > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 3MB");
+    if (block?.type === "image") {
+      for (const image of normalizeImageList(block)) {
+        if (!String(image.dataUrl || "").startsWith("data:image/")) throw new Error("图片格式不支持");
+        if (dataUrlBytes(image.dataUrl) > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 3MB");
+      }
     }
   }
   if (payload.video?.mode === "upload") {
@@ -262,10 +281,12 @@ function normalizeBlocks(payload) {
   return payload.blocks
     .map((block) => {
       if (block?.type === "image") {
+        const images = normalizeImageList(block);
         return {
           type: "image",
           body: String(block.body || ""),
-          image: block.image?.dataUrl ? { name: String(block.image.name || ""), dataUrl: String(block.image.dataUrl) } : null
+          image: images[0] || null,
+          images
         };
       }
       if (block?.type === "mindmap") {
@@ -278,6 +299,8 @@ function normalizeBlocks(payload) {
 
 function normalizeMaterial(payload, existing = {}) {
   validateUploads(payload);
+  const blocks = normalizeBlocks(payload);
+  const images = Array.isArray(payload.images) && payload.images.length ? payload.images : blocks.flatMap((block) => (block.type === "image" ? normalizeImageList(block) : []));
   const title = String(payload.title || "").trim();
   if (!title) throw new Error("标题不能为空");
   const category = String(payload.category || "").trim();
@@ -301,10 +324,10 @@ function normalizeMaterial(payload, existing = {}) {
     status: payload.status === "draft" ? "draft" : "published",
     type: payload.type || "text",
     body: String(payload.body || ""),
-    images: Array.isArray(payload.images) ? payload.images : [],
+    images,
     video,
     mindmap: payload.mindmap || null,
-    blocks: normalizeBlocks(payload),
+    blocks,
     updatedAt: now()
   };
 }

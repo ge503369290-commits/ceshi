@@ -36,6 +36,15 @@ const feedbackLimits = {
   maxImageBytes: 3 * 1024 * 1024,
   maxTotalImageBytes: 4 * 1024 * 1024
 };
+const materialImageLimits = {
+  maxImages: 9,
+  maxSourceBytes: 12 * 1024 * 1024,
+  targetBytes: 420 * 1024,
+  maxWidth: 1600,
+  minWidth: 720,
+  quality: 0.76,
+  minQuality: 0.44
+};
 const textStyleFontSizes = [14, 16, 18, 20, 22, 24, 28, 32];
 const textStyleColors = [
   "#ef4444",
@@ -289,7 +298,7 @@ function serializeContentBlocks() {
         syncRichTextBlock(block);
         const images = normalizeBlockImages(block).slice(0, 9);
         return images.length || String(block.body || "").trim()
-          ? { type: "image", body: String(block.body || ""), image: images[0] || null, images, richText: normalizeRichTextSegments(block.richText, block.body) }
+          ? { type: "image", body: String(block.body || ""), images, richText: normalizeRichTextSegments(block.richText, block.body) }
           : null;
       }
       if (block.type === "mindmap") return { type: "mindmap", mindmap: serializeDiagram(state.mindmap) };
@@ -570,6 +579,15 @@ function canvasToBlob(canvas, type, quality) {
   });
 }
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function renderCompressedBlob(source, type, quality, widthLimit) {
   const image = await loadImage(source.url);
   const scale = Math.min(1, widthLimit / image.naturalWidth);
@@ -586,6 +604,36 @@ async function renderCompressedBlob(source, type, quality, widthLimit) {
   context.drawImage(image, 0, 0, width, height);
   const blob = await canvasToBlob(canvas, type, type === "image/png" ? undefined : quality);
   return { blob, width, height };
+}
+
+async function compressMaterialImage(file) {
+  if (file.size > materialImageLimits.maxSourceBytes) throw new Error("单张原图不能超过 12MB");
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(sourceUrl);
+    let widthLimit = Math.min(image.naturalWidth, materialImageLimits.maxWidth);
+    let quality = materialImageLimits.quality;
+    let compressed = null;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      compressed = await renderCompressedBlob({ url: sourceUrl }, "image/jpeg", quality, widthLimit);
+      const canReduceQuality = quality > materialImageLimits.minQuality;
+      const canReduceWidth = widthLimit > materialImageLimits.minWidth;
+      if (compressed.blob.size <= materialImageLimits.targetBytes || (!canReduceQuality && !canReduceWidth)) break;
+      if (canReduceQuality) quality = Math.max(materialImageLimits.minQuality, quality - 0.08);
+      else widthLimit = Math.max(materialImageLimits.minWidth, Math.floor(widthLimit * 0.86));
+    }
+
+    return {
+      name: compressedFileName(file.name, "image/jpeg"),
+      dataUrl: await blobToDataUrl(compressed.blob),
+      size: compressed.blob.size,
+      width: compressed.width,
+      height: compressed.height
+    };
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
 }
 
 async function compressCurrentImage() {
@@ -1929,7 +1977,7 @@ function renderContentBlockEditorItem(block, index) {
       <div class="builder-block">
         ${controls}
         ${renderRichTextEditor(block, index, "图片上方或下方的文字", "这里可以写图片说明，也可以留空")}
-        <label class="field"><span>图片，可多选，最多 9 张，单张不超过 3MB</span><input type="file" accept="image/*" multiple data-block-image="${index}" /></label>
+        <label class="field"><span>图片，可多选，最多 9 张，保存时会自动压缩</span><input type="file" accept="image/*" multiple data-block-image="${index}" /></label>
         ${renderBlockImageEditorPreview(block, index)}
       </div>
     `;
@@ -2546,7 +2594,7 @@ function bindMaterialEditor() {
         if (images.length + files.length > 9) throw new Error("一个图文模块最多上传 9 张图片");
         for (const file of files) {
           if (!file.type.startsWith("image/")) throw new Error("只能上传图片");
-          images.push(await fileToDataUrl(file, 3 * 1024 * 1024, "图片"));
+          images.push(await compressMaterialImage(file));
         }
         block.images = images;
         block.image = images[0] || null;
@@ -2602,7 +2650,7 @@ function bindMaterialEditor() {
       .map((block) => block.body || "")
       .filter(Boolean)
       .join("\n\n");
-    const images = blocks.flatMap((block) => (block.type === "image" ? normalizeBlockImages(block) : []));
+    const images = [];
     const mindmapBlock = blocks.find((block) => block.type === "mindmap");
     const payload = {
       title: form.get("title"),
