@@ -1686,6 +1686,43 @@ textarea:focus {
   line-height: 1.5;
 }
 
+.category-sections {
+  display: grid;
+  gap: 44px;
+  padding-top: 28px;
+}
+
+.category-section {
+  display: grid;
+  gap: 20px;
+}
+
+.category-section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+}
+
+.category-section-head h3 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.category-count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.category-empty {
+  margin-top: 0;
+}
+
 .grid {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 24px;
@@ -2213,6 +2250,11 @@ textarea:focus {
   .section-head {
     display: grid;
     padding-top: 40px;
+  }
+
+  .category-section-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .compressor-grid,

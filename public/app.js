@@ -1334,7 +1334,68 @@ function renderImageCompressor(target) {
   bindImageCompressor();
 }
 
+function getLibraryCategorySections() {
+  const categories = [
+    ...new Set(
+      (state.filters.category
+        ? [state.filters.category]
+        : [...state.categories, ...state.materials.map((item) => item.category)]
+      ).filter(Boolean)
+    )
+  ];
+
+  return categories.map((category) => ({
+    category,
+    materials: state.materials.filter((item) => item.category === category)
+  }));
+}
+
+function renderMaterialCard(item) {
+  return `
+    <article class="card">
+      <span class="corner-square"></span>
+      <div class="meta">
+        <span class="chip">${escapeHtml(item.category)}</span>
+        <span class="chip">${typeText(item.type)}</span>
+        ${item.status === "draft" ? '<span class="chip status-draft">草稿</span>' : ""}
+      </div>
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>${escapeHtml(item.body || "暂无文字说明")}</p>
+      <div class="meta">${(item.tags || []).map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
+      <div class="row card-actions">
+        <button class="btn" data-open="${item.id}">查看</button>
+        ${
+          state.user.role === "admin"
+            ? `<button class="btn secondary" data-edit="${item.id}">编辑</button><button class="btn danger" data-delete="${item.id}">删除</button>`
+            : ""
+        }
+      </div>
+    </article>
+  `;
+}
+
+function renderLibraryCategorySection(section) {
+  return `
+    <section class="category-section">
+      <header class="category-section-head">
+        <div>
+          <span class="eyebrow">CATEGORY</span>
+          <h3>${escapeHtml(section.category)}</h3>
+        </div>
+        <span class="category-count">${section.materials.length} 项内容</span>
+      </header>
+      ${
+        section.materials.length
+          ? `<div class="grid">${section.materials.map((item) => renderMaterialCard(item)).join("")}</div>`
+          : '<div class="empty category-empty">该分类下暂无符合条件的资料。</div>'
+      }
+    </section>
+  `;
+}
+
 function renderLibrary(target) {
+  const categorySections = getLibraryCategorySections();
+
   target.innerHTML = `
     <section class="library-hero">
       <div class="hero-copy">
@@ -1361,34 +1422,10 @@ function renderLibrary(target) {
       </div>
       <p>按分类和标签快速定位内容，管理员可直接编辑、删除或发布新资料。</p>
     </section>
-    <div class="grid">
-      ${state.materials
-        .map(
-          (item) => `
-            <article class="card">
-              <span class="corner-square"></span>
-              <div class="meta">
-                <span class="chip">${escapeHtml(item.category)}</span>
-                <span class="chip">${typeText(item.type)}</span>
-                ${item.status === "draft" ? '<span class="chip status-draft">草稿</span>' : ""}
-              </div>
-              <h3>${escapeHtml(item.title)}</h3>
-              <p>${escapeHtml(item.body || "暂无文字说明")}</p>
-              <div class="meta">${(item.tags || []).map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
-              <div class="row card-actions">
-                <button class="btn" data-open="${item.id}">查看</button>
-                ${
-                  state.user.role === "admin"
-                    ? `<button class="btn secondary" data-edit="${item.id}">编辑</button><button class="btn danger" data-delete="${item.id}">删除</button>`
-                    : ""
-                }
-              </div>
-            </article>
-          `
-        )
-        .join("")}
+    <div class="category-sections">
+      ${categorySections.length ? categorySections.map((section) => renderLibraryCategorySection(section)).join("") : ""}
     </div>
-    ${state.materials.length ? "" : '<div class="empty">没有找到符合条件的资料。</div>'}
+    ${state.materials.length || categorySections.length ? "" : '<div class="empty">没有找到符合条件的资料。</div>'}
   `;
   bindMaterialActions();
 }
