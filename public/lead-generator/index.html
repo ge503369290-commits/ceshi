@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>基木鱼开店 · 电话线索数据生成器</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="5.3" rx="4" ry="5.2" fill="#3478f6"/><ellipse cx="25.6" cy="12.6" rx="4.1" ry="5.5" transform="rotate(48 25.6 12.6)" fill="#3478f6"/><ellipse cx="20.5" cy="23.5" rx="4.6" ry="6.2" transform="rotate(35 20.5 23.5)" fill="#155cda"/><ellipse cx="7" cy="17.5" rx="4.2" ry="5.7" transform="rotate(-48 7 17.5)" fill="#ffba24"/><circle cx="14.4" cy="15.2" r="3.1" fill="#2b70ec"/></svg>
+        <span class="brand-name">百度营销</span><span class="brand-sub">基木鱼开店</span>
+      </div>
+      <span class="edition-badge">常用</span>
+      <button class="shop-switcher" type="button"><span id="headerShopName">先驰汽车上门补胎修车搭电道路救援</span><span>⌄</span></button>
+      <div class="topbar-spacer"></div>
+      <button class="ghost-action" type="button" id="openGeneratorTop">✦ 生成线索</button>
+      <span class="top-link">店铺学堂</span>
+      <span class="top-link">工具中心⌄</span>
+      <span class="divider"></span>
+      <span class="top-link">⇆ 本地店铺</span>
+    </header>
+
+    <aside class="sidebar">
+      <nav>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 8.5 10 3l6.5 5.5v7.2a1.3 1.3 0 0 1-1.3 1.3H4.8a1.3 1.3 0 0 1-1.3-1.3Z"/><path d="M8 17v-5h4v5"/></svg>首页</a>
+        <div class="nav-section">
+          <button class="nav-main nav-toggle" type="button"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7h14l-1.1-3H4.1Z"/><path d="M4.2 8v8.2h11.6V8M7.2 16.2v-4.5h5.6v4.5"/><path d="M3 7a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 2 0"/></svg>店铺<b></b></button>
+          <div class="nav-children">
+            <a href="#">店铺管理</a><a href="#">店铺装修</a><a href="#">店铺质检</a><a href="#">出卡诊断</a><a href="#">店铺成长</a><a href="#">权益中心</a>
+          </div>
+        </div>
+        <div class="nav-section">
+          <button class="nav-main nav-toggle" type="button"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m3 6 3.2 3L10 4l3.8 5L17 6l-1.3 8.3H4.3Z"/><path d="M5 17h10"/></svg>会员<b></b></button>
+          <div class="nav-children"><a href="#">我的会员 <em>NEW</em></a><a href="#">流量宝</a></div>
+        </div>
+        <div class="nav-section">
+          <button class="nav-main nav-toggle active-group" type="button"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="14" r="2"/><circle cx="10" cy="6" r="2"/><circle cx="15.5" cy="10" r="2"/><path d="m6.1 12.3 2.8-4.6m3 .1 2 1.2M7 14h8.5v-1.8"/></svg>线索<b></b></button>
+          <div class="nav-children"><a href="#">咨询线索</a><a class="active" href="#">电话线索</a><a href="#">表单线索</a><a href="#">卡券线索</a></div>
+        </div>
+        <div class="nav-section">
+          <button class="nav-main nav-toggle" type="button"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6.5h13l-.8 10H4.3Z"/><path d="M7 7V5a3 3 0 0 1 6 0v2"/></svg>商品<b></b></button>
+          <div class="nav-children"><a href="#">商品管理</a><a href="#">商品诊断</a></div>
+        </div>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9v3h3l7 3V6L6 9Z"/><path d="M6 12 7.2 17h2.5l-1.2-4M15 8v5"/></svg>营销</a>
+      </nav>
+      <button class="collapse-button" type="button">收起 <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 5h10M3 9h10M3 13h10M15 6l-3 3 3 3"/></svg></button>
+    </aside>
+
+    <main class="main-content">
+      <div class="page-heading">
+        <div><p class="eyebrow">线索管理</p><h1>电话线索</h1></div>
+        <div class="heading-actions"><button class="outline large export-image-button" type="button" id="exportImage">▣ 导出为图片</button><button class="primary large" type="button" id="openGenerator">＋ 新增后台数据</button></div>
+      </div>
+
+      <section class="generator-card" id="generatorCard">
+        <div class="generator-copy">
+          <span class="sparkle">✦</span>
+          <div><h2>线索数据生成台</h2><p>设置店铺与时间范围，一键创建真实分布的模拟来电记录</p></div>
+        </div>
+        <form id="generatorForm" class="generator-form">
+          <label class="field store-field"><span>店铺名称</span><input id="storeName" name="storeName" autocomplete="off" maxlength="40" required /></label>
+          <label class="field"><span>开始时间</span><input id="startTime" name="startTime" type="datetime-local" required /></label>
+          <label class="field"><span>结束时间</span><input id="endTime" name="endTime" type="datetime-local" required /></label>
+          <label class="field count-field"><span>线索数量</span><div class="number-control"><button type="button" data-step="-1">−</button><input id="leadCount" name="leadCount" type="number" min="1" max="500" value="9" required /><button type="button" data-step="1">＋</button></div></label>
+          <button class="generate-button" type="submit"><span>✦</span><b>生成数据</b></button>
+          <details class="advanced-settings" open>
+            <summary><span>高级生成设置</span><small>控制时间分布、日期权重和通话状态比例</small></summary>
+            <div class="advanced-grid">
+              <label class="advanced-field time-distribution-field">
+                <span>每日时间分布</span>
+                <span class="advanced-time-range"><input id="distributionStartTime" type="time" value="08:00" required /><i>至</i><input id="distributionEndTime" type="time" value="22:00" required /></span>
+              </label>
+              <label class="advanced-field">
+                <span>日期权重</span>
+                <select id="dateWeightMode">
+                  <option value="uniform">均匀分布</option>
+                  <option value="recent">近期日期优先</option>
+                  <option value="weekday">工作日优先</option>
+                  <option value="custom">自定义逐日权重</option>
+                </select>
+              </label>
+              <fieldset class="status-ratio-field">
+                <legend>通话状态比例（合计 100%）</legend>
+                <label><span>接通</span><span><input id="connectedRatio" type="number" min="0" max="100" value="60" required /><i>%</i></span></label>
+                <label><span>客服拒接</span><span><input id="rejectedRatio" type="number" min="0" max="100" value="20" required /><i>%</i></span></label>
+                <label><span>客服无应答</span><span><input id="unansweredRatio" type="number" min="0" max="100" value="20" required /><i>%</i></span></label>
+                <span class="status-ratio-total" id="statusRatioTotal">当前合计 100%</span>
+              </fieldset>
+            </div>
+            <div class="date-weight-editor" id="dateWeightEditor" hidden>
+              <div class="date-weight-heading"><strong>自定义日期权重</strong><span>权重越大，当天生成的线索越多；设置为 0 表示当天不生成。</span></div>
+              <div class="date-weight-list" id="dateWeightList"></div>
+            </div>
+          </details>
+        </form>
+        <p class="generator-note">每次生成会替换当前数据，支持 1–500 条；来电时间按时段和日期权重分布，通话状态按设定比例精确生成。</p>
+      </section>
+
+      <section class="filter-card">
+        <div class="filter-row">
+          <label class="inline-field"><span>流量渠道</span><select id="channelFilter"><option value="" selected>全部渠道</option><option>店铺会员/流量宝</option><option>自然搜索</option><option>广告推广</option></select></label>
+          <label class="inline-field"><span>线索ID</span><input id="idFilter" placeholder="请填写线索ID" /></label>
+          <label class="inline-field"><span>手机号</span><input id="phoneFilter" inputmode="numeric" placeholder="请填写手机号" /></label>
+          <label class="inline-field date-filter"><span>线索时间</span><span class="date-range"><input id="filterStartDate" type="date" aria-label="线索开始日期" /><i>~</i><input id="filterEndDate" type="date" aria-label="线索结束日期" /></span></label>
+          <div class="quick-dates"><button type="button" data-days="0">今天</button><button type="button" data-days="1">昨天</button><button class="selected" type="button" data-days="7">近7天</button></div>
+        </div>
+        <div class="filter-actions"><button class="primary" id="applyFilters" type="button">筛选</button><button class="secondary" id="clearFilters" type="button">清空筛选条件</button></div>
+      </section>
+
+      <section class="table-card">
+        <div class="table-toolbar">
+          <div class="count-copy">线索数量：<strong id="visibleCount">0</strong> 个</div>
+          <div><button class="outline" id="definitionsButton" type="button">查看明文线索</button><button class="outline" id="exportButton" type="button">下载线索</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>方案名称 <span class="hint">?</span></th><th>线索ID <span class="hint">?</span></th><th>shopId</th><th>店铺名称</th><th>客户电话 <span class="hint">?</span></th><th>店铺虚拟号 <span class="hint">?</span></th><th>线索来源 <span class="hint">?</span></th><th>流量渠道 <span class="hint">?</span></th><th>时间 <span class="hint">?</span></th><th>通话录音 <span class="hint">?</span></th><th>通话状态 <span class="hint">?</span></th></tr></thead>
+            <tbody id="leadTableBody"></tbody>
+          </table>
+          <div class="empty-state" id="emptyState" hidden><div>⌕</div><h3>没有找到线索</h3><p>调整筛选条件或重新生成一批数据</p></div>
+        </div>
+        <div class="pagination">
+          <label class="page-size"><select id="pageSize"><option value="10">10条/页</option><option value="20" selected>20条/页</option><option value="50">50条/页</option><option value="100">100条/页</option></select></label>
+          <span id="pageSummary">共 0 条</span>
+          <button id="prevPage" type="button" aria-label="上一页">‹</button><div class="page-buttons" id="pageButtons"></div><button id="nextPage" type="button" aria-label="下一页">›</button>
+          <label class="go-page">去第 <input id="gotoPage" type="number" min="1" value="1" /> 页 <button id="goPage" type="button">确定</button></label>
+        </div>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <dialog id="phoneDialog">
+      <button class="dialog-close" id="closeDialog" type="button">×</button>
+      <div class="dialog-icon">✓</div><h2>明文线索已解锁</h2><p>表格中的客户电话已完整显示。再次点击按钮可恢复脱敏展示。</p>
+      <button class="primary dialog-confirm" id="confirmDialog" type="button">知道了</button>
+    </dialog>
+  </div>
+  <script src="vendor/html2canvas.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -984,7 +984,7 @@ function renderLogin() {
 
 function renderShell() {
   const editorMode = state.view === "adminEditor";
-  const fullWidthMode = editorMode || state.view === "compressor";
+  const fullWidthMode = editorMode || ["leadGenerator", "compressor"].includes(state.view);
   app.innerHTML = `
     <section class="shell">
       <div class="utility-bar">
@@ -1024,6 +1024,7 @@ function renderShell() {
 function renderTabs() {
   const tabs = [
     `<button class="tab ${state.view === "library" ? "active" : ""}" data-view="library">资料库</button>`,
+    `<button class="tab ${state.view === "leadGenerator" ? "active" : ""}" data-view="leadGenerator">线索数据生成</button>`,
     `<button class="tab ${state.view === "compressor" ? "active" : ""}" data-view="compressor">图片压缩</button>`
   ];
   if (state.user.role === "admin") {
@@ -1251,12 +1252,25 @@ function renderMainView() {
     return;
   }
   if (state.view === "adminEditor") renderMaterialEditor(target);
+  else if (state.view === "leadGenerator") renderLeadGenerator(target);
   else if (state.view === "compressor") renderImageCompressor(target);
   else if (state.view === "admin") renderAdmin(target);
   else if (state.view === "users") renderUsers(target);
   else if (state.view === "logs") renderLogs(target);
   else if (state.view === "feedbacks") renderFeedbacks(target);
   else renderLibrary(target);
+}
+
+function renderLeadGenerator(target) {
+  target.innerHTML = `
+    <section class="lead-generator-page" aria-label="线索数据生成工具">
+      <iframe
+        class="lead-generator-frame"
+        src="/lead-generator/index.html"
+        title="电话线索数据生成软件"
+      ></iframe>
+    </section>
+  `;
 }
 
 function renderImageCompressor(target) {

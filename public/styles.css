@@ -1968,6 +1968,21 @@ textarea:focus {
   align-items: start;
 }
 
+.lead-generator-page {
+  min-height: calc(100vh - 152px);
+  margin: 0 -48px -64px;
+  background: #f4f6f9;
+}
+
+.lead-generator-frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 152px);
+  min-height: 760px;
+  border: 0;
+  background: #f4f6f9;
+}
+
 .compressor-controls {
   display: grid;
   gap: 18px;
@@ -2197,6 +2212,11 @@ textarea:focus {
     padding: 64px 24px;
   }
 
+  .lead-generator-page {
+    margin-right: -24px;
+    margin-left: -24px;
+  }
+
   .hero-copy h1 {
     font-size: 36px;
   }
@@ -2237,6 +2257,17 @@ textarea:focus {
     min-height: 0;
     margin: 0 -18px;
     padding: 48px 18px;
+  }
+
+  .lead-generator-page {
+    min-height: calc(100vh - 188px);
+    margin-right: -18px;
+    margin-left: -18px;
+  }
+
+  .lead-generator-frame {
+    height: calc(100vh - 188px);
+    min-height: 680px;
   }
 
   .hero-copy h1 {
