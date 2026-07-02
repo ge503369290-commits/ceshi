@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const STORAGE_KEY = 'lead-generator-v2';
-  const state = { leads: [], filtered: [], showFullPhone: false, shopId: '', currentPage: 1, pageSize: 20, dateWeights: {} };
+  const state = { leads: [], filtered: [], showFullPhone: false, shopId: '', shopNameForId: '', currentPage: 1, pageSize: 20, dateWeights: {} };
   const els = {
     form: $('#generatorForm'), storeName: $('#storeName'), startTime: $('#startTime'), endTime: $('#endTime'), leadCount: $('#leadCount'),
     distributionStartTime: $('#distributionStartTime'), distributionEndTime: $('#distributionEndTime'), dateWeightMode: $('#dateWeightMode'),
@@ -33,11 +33,12 @@
   };
   const maskPhone = (phone) => `${phone.slice(0, 4)}***${phone.slice(-4)}`;
   const randomId = (used) => { let id; do { id = String(randomInt(580000000, 599999999)); } while (used.has(id)); used.add(id); return id; };
+  const randomShopId = () => String(randomInt(300000000, 999999999));
   const escapeHtml = (text) => String(text).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
   const showToast = (message) => { els.toast.textContent = message; els.toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => els.toast.classList.remove('show'), 2300); };
 
   function getDateKeys() {
-    const start = new Date(els.startTime.value);
+    const start = new Date(`${els.startTime.value}T00:00`);
     const end = new Date(els.endTime.value);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return [];
     const cursor = new Date(start); cursor.setHours(0, 0, 0, 0);
@@ -69,6 +70,28 @@
     const total = [els.connectedRatio, els.rejectedRatio, els.unansweredRatio].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
     els.statusRatioTotal.textContent = `当前合计 ${total}%`;
     els.statusRatioTotal.classList.toggle('invalid', total !== 100);
+  }
+
+  function syncShopId(storeName) {
+    if (!storeName) return;
+    if (!/^\d{9}$/.test(state.shopId) || state.shopNameForId !== storeName) {
+      state.shopId = randomShopId();
+      state.shopNameForId = storeName;
+    }
+  }
+
+  function setGeneratorDateRange(range) {
+    const now = new Date(); now.setSeconds(0, 0);
+    const start = new Date(now); const end = new Date(now);
+    if (range === 'today') start.setHours(0, 0, 0, 0);
+    if (range === 'yesterday') {
+      start.setDate(start.getDate() - 1); start.setHours(0, 0, 0, 0);
+      end.setDate(end.getDate() - 1); end.setHours(23, 59, 0, 0);
+    }
+    if (range === 'last7') { start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0); }
+    els.startTime.value = formatDate(start); els.endTime.value = toLocalInput(end);
+    document.querySelectorAll('[data-generator-range]').forEach((button) => button.classList.toggle('selected', button.dataset.generatorRange === range));
+    renderDateWeightEditor();
   }
 
   function readAdvancedSettings() {
@@ -135,23 +158,24 @@
   function setDefaults() {
     const end = new Date(); end.setSeconds(0, 0);
     const start = new Date(end); start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0);
-    els.startTime.value = toLocalInput(start); els.endTime.value = toLocalInput(end);
+    els.startTime.value = formatDate(start); els.endTime.value = toLocalInput(end);
     els.storeName.value = '先驰汽车上门补胎修车搭电道路救援'; els.leadCount.value = 9;
     els.distributionStartTime.value = '08:00'; els.distributionEndTime.value = '22:00'; els.dateWeightMode.value = 'uniform';
-    els.connectedRatio.value = 60; els.rejectedRatio.value = 20; els.unansweredRatio.value = 20; state.dateWeights = {}; syncRatioTotal();
+    els.connectedRatio.value = 60; els.rejectedRatio.value = 20; els.unansweredRatio.value = 20; state.dateWeights = {}; state.shopId = ''; state.shopNameForId = ''; syncRatioTotal();
   }
   function createLeads(storeName, startMs, endMs, count, settings) {
-    const usedIds = new Set(); const shopId = /^\d{9}$/.test(state.shopId) ? state.shopId : String(randomInt(300000000, 999999999)); state.shopId = shopId;
+    syncShopId(storeName);
+    const usedIds = new Set(); const shopId = state.shopId;
     const dateDistribution = buildDateDistribution(new Date(startMs), new Date(endMs), settings);
     const statuses = buildStatusPool(count, settings.statusRatios);
     return Array.from({length: count}, (_, index) => {
       const call = statuses[index]; const day = weightedRandom(dateDistribution); const phone = randomPhone();
-      return { plan:'电话3', id:randomId(usedIds), shopId, storeName, phone, virtual:'-', source:'查看线索来源', channel:'店铺会员/流量宝', time:new Date(randomInt(day.min, day.max)).toISOString(), recording:call.recording, status:call.label };
+      return { plan:'电话', id:randomId(usedIds), shopId, storeName, phone, virtual:'-', source:'查看线索来源', channel:'店铺会员/流量宝', time:new Date(randomInt(day.min, day.max)).toISOString(), recording:call.recording, status:call.label };
     }).sort((a,b) => new Date(b.time) - new Date(a.time));
   }
   function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      leads:state.leads, shopId:state.shopId, storeName:els.storeName.value, startTime:els.startTime.value, endTime:els.endTime.value, leadCount:els.leadCount.value,
+      leads:state.leads, shopId:state.shopId, shopNameForId:state.shopNameForId, storeName:els.storeName.value, startTime:els.startTime.value, endTime:els.endTime.value, leadCount:els.leadCount.value,
       advanced:{distributionStartTime:els.distributionStartTime.value,distributionEndTime:els.distributionEndTime.value,dateWeightMode:els.dateWeightMode.value,dateWeights:state.dateWeights,connectedRatio:els.connectedRatio.value,rejectedRatio:els.rejectedRatio.value,unansweredRatio:els.unansweredRatio.value}
     }));
   }
@@ -159,8 +183,9 @@
     setDefaults();
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (!saved?.leads?.length) return false;
-      state.leads = saved.leads; state.shopId = saved.shopId || '';
-      els.storeName.value = saved.storeName || state.leads[0].storeName; els.startTime.value = saved.startTime || els.startTime.value; els.endTime.value = saved.endTime || els.endTime.value; els.leadCount.value = saved.leadCount || state.leads.length;
+      state.leads = saved.leads.map((lead) => ({ ...lead, plan: lead.plan === '电话3' ? '电话' : lead.plan })); state.shopId = saved.shopId || '';
+      els.storeName.value = saved.storeName || state.leads[0].storeName; els.startTime.value = (saved.startTime || els.startTime.value).slice(0, 10); els.endTime.value = saved.endTime || els.endTime.value; els.leadCount.value = saved.leadCount || state.leads.length;
+      state.shopNameForId = saved.shopNameForId || els.storeName.value;
       const advanced = saved.advanced || {};
       els.distributionStartTime.value = advanced.distributionStartTime || els.distributionStartTime.value;
       els.distributionEndTime.value = advanced.distributionEndTime || els.distributionEndTime.value;
@@ -203,7 +228,7 @@
     render(); return true;
   }
   function generate(event) {
-    event?.preventDefault(); const name = els.storeName.value.trim(); const start = new Date(els.startTime.value); const end = new Date(els.endTime.value); const count = Number(els.leadCount.value);
+    event?.preventDefault(); const name = els.storeName.value.trim(); const start = new Date(`${els.startTime.value}T00:00`); const end = new Date(els.endTime.value); const count = Number(els.leadCount.value);
     if (!name) return showToast('请输入店铺名称'); if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return showToast('请选择完整的时间范围');
     if (start >= end) return showToast('结束时间需要晚于开始时间'); if (!Number.isInteger(count) || count < 1 || count > 500) return showToast('线索数量请设置为 1–500');
     let advanced;
@@ -238,8 +263,9 @@
   }
   els.form.addEventListener('submit', generate);
   document.querySelectorAll('[data-step]').forEach(button => button.addEventListener('click', () => { const next = Math.max(1,Math.min(500,Number(els.leadCount.value||1)+Number(button.dataset.step))); els.leadCount.value=next; }));
+  document.querySelectorAll('[data-generator-range]').forEach((button) => button.addEventListener('click', () => setGeneratorDateRange(button.dataset.generatorRange)));
   els.dateWeightMode.addEventListener('change', () => renderDateWeightEditor());
-  [els.startTime, els.endTime].forEach((input) => input.addEventListener('change', () => renderDateWeightEditor()));
+  [els.startTime, els.endTime].forEach((input) => input.addEventListener('change', () => { document.querySelectorAll('[data-generator-range]').forEach((button) => button.classList.remove('selected')); renderDateWeightEditor(); }));
   els.dateWeightList.addEventListener('input', (event) => {
     const date = event.target.dataset.dateWeight;
     if (date) state.dateWeights[date] = Math.max(0, Number(event.target.value) || 0);
@@ -260,7 +286,7 @@
   $('#closeDialog').addEventListener('click',()=>els.dialog.close()); $('#confirmDialog').addEventListener('click',()=>els.dialog.close());
   $('#openGenerator').addEventListener('click',()=>{ $('#generatorCard').scrollIntoView({behavior:'smooth',block:'center'});els.storeName.focus(); }); $('#openGeneratorTop').addEventListener('click',()=>$('#openGenerator').click());
   els.body.addEventListener('click',(e)=>{ if(e.target.dataset.recording) showToast('模拟录音：该线索通话已接通'); if(e.target.dataset.source) showToast('线索来自店铺页面的电话咨询'); });
-  els.storeName.addEventListener('input',()=>{els.headerShopName.textContent=els.storeName.value.trim()||'未命名店铺';});
+  els.storeName.addEventListener('input',()=>{ const name = els.storeName.value.trim(); els.headerShopName.textContent=name||'未命名店铺'; syncShopId(name); });
   const restored = load(); renderDateWeightEditor(state.dateWeights); syncRatioTotal();
   if (!restored) generate(); else { state.filtered=[...state.leads]; render(); }
 })();

@@ -59,12 +59,16 @@
       <section class="generator-card" id="generatorCard">
         <div class="generator-copy">
           <span class="sparkle">✦</span>
-          <div><h2>线索数据生成台</h2><p>设置店铺与时间范围，一键创建真实分布的模拟来电记录</p></div>
+          <div><h2>线索数据生成台</h2></div>
         </div>
         <form id="generatorForm" class="generator-form">
           <label class="field store-field"><span>店铺名称</span><input id="storeName" name="storeName" autocomplete="off" maxlength="40" required /></label>
-          <label class="field"><span>开始时间</span><input id="startTime" name="startTime" type="datetime-local" required /></label>
+          <label class="field"><span>开始日期</span><input id="startTime" name="startTime" type="date" required /></label>
           <label class="field"><span>结束时间</span><input id="endTime" name="endTime" type="datetime-local" required /></label>
+          <div class="field generator-range-field">
+            <span>快捷日期</span>
+            <div class="generator-quick-dates"><button type="button" data-generator-range="today">今日</button><button type="button" data-generator-range="yesterday">昨日</button><button type="button" data-generator-range="last7">近七天</button></div>
+          </div>
           <label class="field count-field"><span>线索数量</span><div class="number-control"><button type="button" data-step="-1">−</button><input id="leadCount" name="leadCount" type="number" min="1" max="500" value="9" required /><button type="button" data-step="1">＋</button></div></label>
           <button class="generate-button" type="submit"><span>✦</span><b>生成数据</b></button>
           <details class="advanced-settings" open>
