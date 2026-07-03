@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "training-library-mvp",
+  "name": "ceshi",
   "main": "worker.js",
   "compatibility_date": "2026-06-12",
   "account_id": "f64e977b58f888aa46eb1ae5d4db7a9c",
