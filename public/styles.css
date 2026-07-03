@@ -2047,8 +2047,46 @@ textarea:focus {
 
 .compressor-preview-panel {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+}
+
+.compressor-batch-item {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.compressor-item-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compressor-item-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.compressor-item-head strong,
+.compressor-item-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compressor-item-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compressor-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .compressor-preview {
@@ -2076,6 +2114,15 @@ textarea:focus {
   max-height: 560px;
   object-fit: contain;
   background: var(--soft);
+}
+
+.compressor-comparison .compressor-preview {
+  padding: 0;
+  border: 0;
+}
+
+.compressor-comparison .compressor-preview img {
+  max-height: 320px;
 }
 
 .compressor-empty {

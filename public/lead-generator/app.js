@@ -161,7 +161,7 @@
     els.startTime.value = formatDate(start); els.endTime.value = toLocalInput(end);
     els.storeName.value = '先驰汽车上门补胎修车搭电道路救援'; els.leadCount.value = 9;
     els.distributionStartTime.value = '08:00'; els.distributionEndTime.value = '22:00'; els.dateWeightMode.value = 'uniform';
-    els.connectedRatio.value = 60; els.rejectedRatio.value = 20; els.unansweredRatio.value = 20; state.dateWeights = {}; state.shopId = ''; state.shopNameForId = ''; syncRatioTotal();
+    els.connectedRatio.value = 90; els.rejectedRatio.value = 0; els.unansweredRatio.value = 10; state.dateWeights = {}; state.shopId = ''; state.shopNameForId = ''; syncRatioTotal();
   }
   function createLeads(storeName, startMs, endMs, count, settings) {
     syncShopId(storeName);
@@ -176,7 +176,7 @@
   function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       leads:state.leads, shopId:state.shopId, shopNameForId:state.shopNameForId, storeName:els.storeName.value, startTime:els.startTime.value, endTime:els.endTime.value, leadCount:els.leadCount.value,
-      advanced:{distributionStartTime:els.distributionStartTime.value,distributionEndTime:els.distributionEndTime.value,dateWeightMode:els.dateWeightMode.value,dateWeights:state.dateWeights,connectedRatio:els.connectedRatio.value,rejectedRatio:els.rejectedRatio.value,unansweredRatio:els.unansweredRatio.value}
+      advanced:{defaultsVersion:2,distributionStartTime:els.distributionStartTime.value,distributionEndTime:els.distributionEndTime.value,dateWeightMode:els.dateWeightMode.value,dateWeights:state.dateWeights,connectedRatio:els.connectedRatio.value,rejectedRatio:els.rejectedRatio.value,unansweredRatio:els.unansweredRatio.value}
     }));
   }
   function load() {
@@ -190,9 +190,10 @@
       els.distributionStartTime.value = advanced.distributionStartTime || els.distributionStartTime.value;
       els.distributionEndTime.value = advanced.distributionEndTime || els.distributionEndTime.value;
       els.dateWeightMode.value = advanced.dateWeightMode || els.dateWeightMode.value;
-      els.connectedRatio.value = advanced.connectedRatio ?? els.connectedRatio.value;
-      els.rejectedRatio.value = advanced.rejectedRatio ?? els.rejectedRatio.value;
-      els.unansweredRatio.value = advanced.unansweredRatio ?? els.unansweredRatio.value;
+      const needsStatusDefaults = Number(advanced.defaultsVersion || 0) < 2;
+      els.connectedRatio.value = needsStatusDefaults ? 90 : advanced.connectedRatio ?? els.connectedRatio.value;
+      els.rejectedRatio.value = needsStatusDefaults ? 0 : advanced.rejectedRatio ?? els.rejectedRatio.value;
+      els.unansweredRatio.value = needsStatusDefaults ? 10 : advanced.unansweredRatio ?? els.unansweredRatio.value;
       state.dateWeights = advanced.dateWeights || {};
       renderDateWeightEditor(state.dateWeights); syncRatioTotal();
       els.filterStartDate.value = els.startTime.value.slice(0, 10); els.filterEndDate.value = els.endTime.value.slice(0, 10);

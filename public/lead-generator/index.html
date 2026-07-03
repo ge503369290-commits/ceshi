@@ -57,10 +57,6 @@
       </div>
 
       <section class="generator-card" id="generatorCard">
-        <div class="generator-copy">
-          <span class="sparkle">✦</span>
-          <div><h2>线索数据生成台</h2></div>
-        </div>
         <form id="generatorForm" class="generator-form">
           <label class="field store-field"><span>店铺名称</span><input id="storeName" name="storeName" autocomplete="off" maxlength="40" required /></label>
           <label class="field"><span>开始日期</span><input id="startTime" name="startTime" type="date" required /></label>
@@ -89,9 +85,9 @@
               </label>
               <fieldset class="status-ratio-field">
                 <legend>通话状态比例（合计 100%）</legend>
-                <label><span>接通</span><span><input id="connectedRatio" type="number" min="0" max="100" value="60" required /><i>%</i></span></label>
-                <label><span>客服拒接</span><span><input id="rejectedRatio" type="number" min="0" max="100" value="20" required /><i>%</i></span></label>
-                <label><span>客服无应答</span><span><input id="unansweredRatio" type="number" min="0" max="100" value="20" required /><i>%</i></span></label>
+                <label><span>接通</span><span><input id="connectedRatio" type="number" min="0" max="100" value="90" required /><i>%</i></span></label>
+                <label><span>客服拒接</span><span><input id="rejectedRatio" type="number" min="0" max="100" value="0" required /><i>%</i></span></label>
+                <label><span>客服无应答</span><span><input id="unansweredRatio" type="number" min="0" max="100" value="10" required /><i>%</i></span></label>
                 <span class="status-ratio-total" id="statusRatioTotal">当前合计 100%</span>
               </fieldset>
             </div>

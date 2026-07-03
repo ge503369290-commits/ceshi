@@ -6,8 +6,8 @@ const state = {
   feedbackImages: [],
   feedbackDraft: "",
   compressor: {
-    source: null,
-    result: null,
+    sources: [],
+    results: [],
     quality: 72,
     maxWidth: 1600,
     outputType: "image/jpeg",
@@ -550,14 +550,15 @@ function formatBytes(bytes = 0) {
   return `${size >= 10 || unit === 0 ? Math.round(size) : size.toFixed(1)} ${units[unit]}`;
 }
 
-function revokeCompressorUrl(key) {
-  const item = state.compressor[key];
-  if (item?.url) URL.revokeObjectURL(item.url);
+function revokeCompressorUrls(items = []) {
+  items.forEach((item) => {
+    if (item?.url) URL.revokeObjectURL(item.url);
+  });
 }
 
-function resetCompressorResult() {
-  revokeCompressorUrl("result");
-  state.compressor.result = null;
+function resetCompressorResults() {
+  revokeCompressorUrls(state.compressor.results);
+  state.compressor.results = [];
 }
 
 function imageTypeExtension(type = "") {
@@ -641,74 +642,92 @@ async function compressMaterialImage(file) {
   }
 }
 
-async function compressCurrentImage() {
-  const source = state.compressor.source;
-  if (!source) return;
-  resetCompressorResult();
-  state.compressor.status = "正在压缩图片...";
-  renderMainView();
-  try {
-    const outputType = state.compressor.outputType;
-    const baseQuality = Math.max(35, Math.min(92, Number(state.compressor.quality) || 72)) / 100;
-    const sourceWidth = source.width || state.compressor.maxWidth;
-    let widthLimit = Math.min(sourceWidth, Math.max(320, Number(state.compressor.maxWidth) || 1600));
-    let quality = baseQuality;
-    let compressed = null;
+async function compressCompressorSource(source) {
+  const outputType = state.compressor.outputType;
+  const baseQuality = Math.max(35, Math.min(92, Number(state.compressor.quality) || 72)) / 100;
+  const sourceWidth = source.width || state.compressor.maxWidth;
+  let widthLimit = Math.min(sourceWidth, Math.max(320, Number(state.compressor.maxWidth) || 1600));
+  let quality = baseQuality;
+  let compressed = null;
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      compressed = await renderCompressedBlob(source, outputType, quality, widthLimit);
-      if (compressed.blob.size < source.size || attempt === 4) break;
-      quality = Math.max(0.35, quality - 0.15);
-      widthLimit = Math.max(320, Math.floor(widthLimit * 0.85));
-    }
-
-    const url = URL.createObjectURL(compressed.blob);
-    const saved = source.size - compressed.blob.size;
-    state.compressor.result = {
-      url,
-      name: compressedFileName(source.name, outputType),
-      size: compressed.blob.size,
-      type: outputType,
-      width: compressed.width,
-      height: compressed.height,
-      saved,
-      savedPercent: source.size ? Math.max(0, Math.round((saved / source.size) * 100)) : 0
-    };
-    state.compressor.status = saved > 0 ? "压缩完成，可以下载新图片。" : "已生成压缩文件；这张图片本身已经很小，体积变化有限。";
-  } catch (error) {
-    state.compressor.status = error.message;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    compressed = await renderCompressedBlob(source, outputType, quality, widthLimit);
+    if (compressed.blob.size < source.size || attempt === 4) break;
+    quality = Math.max(0.35, quality - 0.15);
+    widthLimit = Math.max(320, Math.floor(widthLimit * 0.85));
   }
+
+  const saved = source.size - compressed.blob.size;
+  return {
+    url: URL.createObjectURL(compressed.blob),
+    name: compressedFileName(source.name, outputType),
+    size: compressed.blob.size,
+    type: outputType,
+    width: compressed.width,
+    height: compressed.height,
+    saved,
+    savedPercent: source.size ? Math.max(0, Math.round((saved / source.size) * 100)) : 0
+  };
+}
+
+async function compressCurrentImages() {
+  const sources = state.compressor.sources;
+  if (!sources.length) return;
+  resetCompressorResults();
+  state.compressor.status = `正在压缩 ${sources.length} 张图片...`;
+  renderMainView();
+  const results = [];
+  for (const source of sources) {
+    try {
+      results.push(await compressCompressorSource(source));
+    } catch (error) {
+      results.push({ name: source.name, error: error.message || "图片压缩失败" });
+    }
+  }
+  state.compressor.results = results;
+  const completed = results.filter((item) => item.url).length;
+  const failed = results.length - completed;
+  state.compressor.status = failed
+    ? `已压缩 ${completed} 张，${failed} 张处理失败。`
+    : `${completed} 张图片已全部压缩完成。`;
   renderMainView();
 }
 
-async function selectCompressorImage(file) {
-  if (!file) return;
-  if (!file.type.startsWith("image/")) {
-    state.compressor.status = "只能上传图片文件。";
+async function selectCompressorImages(files) {
+  const selectedFiles = Array.from(files || []);
+  if (!selectedFiles.length) return;
+  const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/"));
+  if (!imageFiles.length) {
+    state.compressor.status = "请选择图片文件。";
     renderMainView();
     return;
   }
-  revokeCompressorUrl("source");
-  resetCompressorResult();
-  const url = URL.createObjectURL(file);
-  try {
-    const image = await loadImage(url);
-    state.compressor.source = {
-      url,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      width: image.naturalWidth,
-      height: image.naturalHeight
-    };
-    state.compressor.status = "";
-    await compressCurrentImage();
-  } catch (error) {
-    URL.revokeObjectURL(url);
-    state.compressor.source = null;
-    state.compressor.status = error.message;
-    renderMainView();
+  revokeCompressorUrls(state.compressor.sources);
+  resetCompressorResults();
+  state.compressor.sources = [];
+  for (const file of imageFiles) {
+    const url = URL.createObjectURL(file);
+    try {
+      const image = await loadImage(url);
+      state.compressor.sources.push({
+        url,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        width: image.naturalWidth,
+        height: image.naturalHeight
+      });
+    } catch {
+      URL.revokeObjectURL(url);
+    }
   }
+  if (!state.compressor.sources.length) {
+    state.compressor.status = "所选图片均无法读取。";
+    renderMainView();
+    return;
+  }
+  state.compressor.status = imageFiles.length < selectedFiles.length ? "已忽略非图片文件。" : "";
+  await compressCurrentImages();
 }
 
 function normalizeTextStyle(style = {}) {
@@ -921,7 +940,7 @@ function renderSetup() {
   app.innerHTML = `
     <section class="login-page">
       <form class="login-card" id="setupForm">
-        <h1>初始化内部培训资料库</h1>
+        <h1>初始化内部培训知识库</h1>
         <p class="muted">这是首次生产部署，请创建管理员密码。完成后初始化入口会自动关闭。</p>
         <div data-error></div>
         <label class="field"><span>管理员名称</span><input name="displayName" value="系统管理员" required /></label>
@@ -956,7 +975,7 @@ function renderLogin() {
   app.innerHTML = `
     <section class="login-page">
       <form class="login-card" id="loginForm">
-        <h1>内部培训资料库</h1>
+        <h1>内部培训知识库</h1>
         <p class="muted">请输入管理员创建的账号密码。</p>
         <div data-error></div>
         <label class="field"><span>账号</span><input name="username" autocomplete="username" required /></label>
@@ -994,7 +1013,7 @@ function renderShell() {
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">TL</span>
-          <strong>内部培训资料库</strong>
+          <strong>内部培训知识库</strong>
         </div>
         <div class="navlinks">
           <span>资料</span>
@@ -1188,11 +1207,11 @@ function bindFeedbackPanel() {
 
 function bindImageCompressor() {
   document.querySelector("[data-compressor-file]")?.addEventListener("change", async (event) => {
-    await selectCompressorImage(event.currentTarget.files?.[0]);
+    await selectCompressorImages(event.currentTarget.files);
   });
   document.querySelector("[data-compressor-output]")?.addEventListener("change", async (event) => {
     state.compressor.outputType = event.currentTarget.value;
-    await compressCurrentImage();
+    await compressCurrentImages();
   });
   document.querySelector("[data-compressor-quality]")?.addEventListener("input", (event) => {
     state.compressor.quality = Number(event.currentTarget.value);
@@ -1201,17 +1220,27 @@ function bindImageCompressor() {
   });
   document.querySelector("[data-compressor-quality]")?.addEventListener("change", async (event) => {
     state.compressor.quality = Number(event.currentTarget.value);
-    await compressCurrentImage();
+    await compressCurrentImages();
   });
   document.querySelector("[data-compressor-width]")?.addEventListener("change", async (event) => {
     state.compressor.maxWidth = Math.max(320, Math.min(6000, Number(event.currentTarget.value) || 1600));
-    await compressCurrentImage();
+    await compressCurrentImages();
   });
-  document.querySelector("[data-compressor-run]")?.addEventListener("click", compressCurrentImage);
+  document.querySelector("[data-compressor-run]")?.addEventListener("click", compressCurrentImages);
+  document.querySelector("[data-compressor-download-all]")?.addEventListener("click", () => {
+    state.compressor.results.filter((item) => item.url).forEach((item, index) => {
+      window.setTimeout(() => {
+        const link = document.createElement("a");
+        link.href = item.url;
+        link.download = item.name;
+        link.click();
+      }, index * 150);
+    });
+  });
   document.querySelector("[data-compressor-clear]")?.addEventListener("click", () => {
-    revokeCompressorUrl("source");
-    resetCompressorResult();
-    state.compressor.source = null;
+    revokeCompressorUrls(state.compressor.sources);
+    resetCompressorResults();
+    state.compressor.sources = [];
     state.compressor.status = "";
     renderMainView();
   });
@@ -1274,20 +1303,25 @@ function renderLeadGenerator(target) {
 }
 
 function renderImageCompressor(target) {
-  const { source, result, quality, maxWidth, outputType, status } = state.compressor;
+  const { sources, results, quality, maxWidth, outputType, status } = state.compressor;
+  const completedResults = results.filter((item) => item.url);
+  const originalBytes = sources.reduce((sum, item) => sum + item.size, 0);
+  const compressedBytes = completedResults.reduce((sum, item) => sum + item.size, 0);
+  const savedBytes = originalBytes - compressedBytes;
+  const savedPercent = originalBytes && completedResults.length === sources.length ? Math.max(0, Math.round((savedBytes / originalBytes) * 100)) : 0;
   target.innerHTML = `
     <section class="compressor-page">
       <div class="section-head compact-head">
         <div>
           <h2>图片压缩</h2>
-          <p>上传本地图片后在浏览器内压缩，生成的新图片可以直接下载，不会上传到服务器。</p>
+          <p>可同时选择多张本地图片批量压缩，所有处理都在浏览器内完成，不会上传到服务器。</p>
         </div>
       </div>
       <div class="compressor-grid">
         <section class="panel compressor-controls">
           <label class="file-pick compressor-drop">
-            <input type="file" accept="image/*" data-compressor-file />
-            <span>${source ? "重新上传图片" : "上传图片"}</span>
+            <input type="file" accept="image/*" multiple data-compressor-file />
+            <span>${sources.length ? "重新选择图片" : "选择多张图片"}</span>
           </label>
           <div class="compressor-options">
             <label class="field">
@@ -1308,38 +1342,41 @@ function renderImageCompressor(target) {
             </label>
           </div>
           <div class="row">
-            <button class="btn" type="button" data-compressor-run ${source ? "" : "disabled"}>重新压缩</button>
-            <button class="btn secondary" type="button" data-compressor-clear ${source ? "" : "disabled"}>清空</button>
+            <button class="btn" type="button" data-compressor-run ${sources.length ? "" : "disabled"}>全部重新压缩</button>
+            <button class="btn secondary" type="button" data-compressor-clear ${sources.length ? "" : "disabled"}>清空</button>
           </div>
-          ${status ? `<div class="${result ? "success" : status.includes("失败") || status.includes("只能") ? "error" : "notice"}">${escapeHtml(status)}</div>` : ""}
+          ${status ? `<div class="${completedResults.length ? "success" : status.includes("失败") || status.includes("无法") ? "error" : "notice"}">${escapeHtml(status)}</div>` : ""}
           ${
-            source
+            sources.length
               ? `<div class="compression-metrics">
-                  <div><span>原图大小</span><strong>${formatBytes(source.size)}</strong></div>
-                  <div><span>原图尺寸</span><strong>${source.width} × ${source.height}</strong></div>
-                  <div><span>压缩后</span><strong>${result ? formatBytes(result.size) : "等待生成"}</strong></div>
-                  <div><span>缩减比例</span><strong>${result ? `${result.savedPercent}%` : "--"}</strong></div>
+                  <div><span>图片数量</span><strong>${sources.length} 张</strong></div>
+                  <div><span>原图合计</span><strong>${formatBytes(originalBytes)}</strong></div>
+                  <div><span>压缩后合计</span><strong>${completedResults.length ? formatBytes(compressedBytes) : "等待生成"}</strong></div>
+                  <div><span>整体缩减</span><strong>${completedResults.length === sources.length ? `${savedPercent}%` : "--"}</strong></div>
                 </div>`
               : ""
           }
-          ${result ? `<a class="btn download-btn" href="${result.url}" download="${escapeHtml(result.name)}">下载压缩图片</a>` : ""}
+          ${completedResults.length ? `<button class="btn download-btn" type="button" data-compressor-download-all>全部下载（${completedResults.length} 张）</button>` : ""}
         </section>
         <section class="compressor-preview-panel">
           ${
-            source
-              ? `<figure class="compressor-preview">
-                  <figcaption>原图：${escapeHtml(source.name)}</figcaption>
-                  <img src="${source.url}" alt="${escapeHtml(source.name)}" />
-                </figure>`
-              : `<div class="empty compressor-empty">选择一张图片后，这里会显示原图和压缩结果。</div>`
-          }
-          ${
-            result
-              ? `<figure class="compressor-preview">
-                  <figcaption>压缩后：${escapeHtml(result.name)} · ${result.width} × ${result.height}</figcaption>
-                  <img src="${result.url}" alt="${escapeHtml(result.name)}" />
-                </figure>`
-              : ""
+            sources.length
+              ? sources.map((source, index) => {
+                  const result = results[index];
+                  return `<article class="compressor-batch-item">
+                    <div class="compressor-item-head">
+                      <div><strong>${escapeHtml(source.name)}</strong><span>${formatBytes(source.size)} · ${source.width} × ${source.height}</span></div>
+                      ${result?.url ? `<a class="btn secondary" href="${result.url}" download="${escapeHtml(result.name)}">下载</a>` : ""}
+                    </div>
+                    <div class="compressor-comparison">
+                      <figure class="compressor-preview"><figcaption>原图</figcaption><img src="${source.url}" alt="${escapeHtml(source.name)}" /></figure>
+                      ${result?.url
+                        ? `<figure class="compressor-preview"><figcaption>压缩后 · ${formatBytes(result.size)} · 缩减 ${result.savedPercent}%</figcaption><img src="${result.url}" alt="${escapeHtml(result.name)}" /></figure>`
+                        : `<div class="empty compressor-empty">${result?.error ? escapeHtml(result.error) : "等待压缩"}</div>`}
+                    </div>
+                  </article>`;
+                }).join("")
+              : `<div class="empty compressor-empty">选择一张或多张图片后，这里会逐张显示原图和压缩结果。</div>`
           }
         </section>
       </div>
