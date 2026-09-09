@@ -15,9 +15,8 @@
         <span class="brand-name">百度营销</span><span class="brand-sub">基木鱼开店</span>
       </div>
       <span class="edition-badge">常用</span>
-      <button class="shop-switcher" type="button"><span id="headerShopName">先驰汽车上门补胎修车搭电道路救援</span><span>⌄</span></button>
+      <button class="shop-switcher" type="button" aria-label="当前店铺"><span id="headerShopName">先驰汽车上门补胎修车搭电道路救援</span></button>
       <div class="topbar-spacer"></div>
-      <button class="ghost-action" type="button" id="openGeneratorTop">✦ 生成线索</button>
       <span class="top-link">店铺学堂</span>
       <span class="top-link">工具中心⌄</span>
       <span class="divider"></span>
@@ -45,7 +44,20 @@
           <button class="nav-main nav-toggle" type="button"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6.5h13l-.8 10H4.3Z"/><path d="M7 7V5a3 3 0 0 1 6 0v2"/></svg>商品<b></b></button>
           <div class="nav-children"><a href="#">商品管理</a><a href="#">商品诊断</a></div>
         </div>
-        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9v3h3l7 3V6L6 9Z"/><path d="M6 12 7.2 17h2.5l-1.2-4M15 8v5"/></svg>营销</a>
+        <div class="nav-section">
+          <button class="nav-main nav-toggle" type="button"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9v3h3l7 3V6L6 9Z"/><path d="M6 12 7.2 17h2.5l-1.2-4M15 8v5"/></svg>营销<b></b></button>
+          <div class="nav-children"><a href="#">普通优惠券</a><a href="#">秒杀活动</a><a href="#">平台活动</a><a href="#">私信运营</a></div>
+        </div>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9m6 7V4m6 12v-7"/><path d="M2.5 16.5h15"/></svg>经营</a>
+        <div class="nav-section">
+          <button class="nav-main nav-toggle" type="button"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3h12v14H4Z"/><path d="M7 7h6M7 10h6M7 13h4"/></svg>订单<b></b></button>
+          <div class="nav-children"><a href="#">订单管理</a><a href="#">评价管理</a><a href="#">券码核销</a><a href="#">扫码买单</a></div>
+        </div>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5h10v9H8l-3 3Z"/><path d="M8 9h4"/></svg>售后</a>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M7 10h6M10 7v6"/></svg>资产</a>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3"/><path d="M4.5 17a5.5 5.5 0 0 1 11 0"/></svg>商户</a>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3"/><path d="m10 2 1 2.1 2.3.5 1.6-1.2 1.7 1.7-1.2 1.6.5 2.3L18 10l-2.1 1-.5 2.3 1.2 1.6-1.7 1.7-1.6-1.2-2.3.5L10 18l-1-2.1-2.3-.5-1.6 1.2-1.7-1.7 1.2-1.6-.5-2.3L2 10l2.1-1 .5-2.3-1.2-1.6 1.7-1.7 1.6 1.2L9 4.1Z"/></svg>设置</a>
+        <a class="nav-main" href="#"><svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3h8v5a4 4 0 0 1-8 0Z"/><path d="M10 12v3M7 17h6M6 5H3v2a3 3 0 0 0 3 3m8-5h3v2a3 3 0 0 1-3 3"/></svg>奖惩中心</a>
       </nav>
       <button class="collapse-button" type="button">收起 <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 5h10M3 9h10M3 13h10M15 6l-3 3 3 3"/></svg></button>
     </aside>
@@ -59,45 +71,24 @@
       <section class="generator-card" id="generatorCard">
         <form id="generatorForm" class="generator-form">
           <label class="field store-field"><span>店铺名称</span><input id="storeName" name="storeName" autocomplete="off" maxlength="40" required /></label>
-          <label class="field"><span>开始日期</span><input id="startTime" name="startTime" type="date" required /></label>
+          <label class="field"><span>开始时间</span><input id="startTime" name="startTime" type="datetime-local" required /></label>
           <label class="field"><span>结束时间</span><input id="endTime" name="endTime" type="datetime-local" required /></label>
-          <div class="field generator-range-field">
-            <span>快捷日期</span>
-            <div class="generator-quick-dates"><button type="button" data-generator-range="today">今日</button><button type="button" data-generator-range="yesterday">昨日</button><button type="button" data-generator-range="last7">近七天</button></div>
-          </div>
+          <div class="field generator-quick-field"><span>快捷日期</span><div class="generator-quick-dates" role="group" aria-label="生成日期快捷选择"><button type="button" data-generator-days="0">今天</button><button type="button" data-generator-days="1">昨天</button><button class="selected" type="button" data-generator-days="7">近7天</button></div></div>
           <label class="field count-field"><span>线索数量</span><div class="number-control"><button type="button" data-step="-1">−</button><input id="leadCount" name="leadCount" type="number" min="1" max="500" value="9" required /><button type="button" data-step="1">＋</button></div></label>
-          <button class="generate-button" type="submit"><span>✦</span><b>生成数据</b></button>
-          <details class="advanced-settings" open>
-            <summary><span>高级生成设置</span><small>控制时间分布、日期权重和通话状态比例</small></summary>
+          <button class="generate-button" type="submit"><span>✦</span><b>确认并生成</b></button>
+          <section class="advanced-settings" aria-labelledby="advancedSettingsTitle">
+            <div class="advanced-heading"><strong id="advancedSettingsTitle">高级生成设置</strong><span>控制线索在日期范围内的分布</span></div>
             <div class="advanced-grid">
-              <label class="advanced-field time-distribution-field">
-                <span>每日时间分布</span>
-                <span class="advanced-time-range"><input id="distributionStartTime" type="time" value="08:00" required /><i>至</i><input id="distributionEndTime" type="time" value="22:00" required /></span>
-              </label>
-              <label class="advanced-field">
-                <span>日期权重</span>
-                <select id="dateWeightMode">
-                  <option value="uniform">均匀分布</option>
-                  <option value="recent">近期日期优先</option>
-                  <option value="weekday">工作日优先</option>
-                  <option value="custom">自定义逐日权重</option>
-                </select>
-              </label>
-              <fieldset class="status-ratio-field">
-                <legend>通话状态比例（合计 100%）</legend>
-                <label><span>接通</span><span><input id="connectedRatio" type="number" min="0" max="100" value="90" required /><i>%</i></span></label>
-                <label><span>客服拒接</span><span><input id="rejectedRatio" type="number" min="0" max="100" value="0" required /><i>%</i></span></label>
-                <label><span>客服无应答</span><span><input id="unansweredRatio" type="number" min="0" max="100" value="10" required /><i>%</i></span></label>
-                <span class="status-ratio-total" id="statusRatioTotal">当前合计 100%</span>
-              </fieldset>
+              <label class="field weight-field"><span>日期权重</span><select id="dateWeight" name="dateWeight"><option value="uniform">均匀分布</option><option value="recent">近期日期优先</option><option value="workday">工作日优先</option><option value="custom">自定义逐日权重</option></select></label>
+              <p class="weight-description" id="weightDescription">范围内每个日期获得相同的生成概率。</p>
             </div>
-            <div class="date-weight-editor" id="dateWeightEditor" hidden>
-              <div class="date-weight-heading"><strong>自定义日期权重</strong><span>权重越大，当天生成的线索越多；设置为 0 表示当天不生成。</span></div>
-              <div class="date-weight-list" id="dateWeightList"></div>
+            <div class="custom-weight-panel" id="customWeightPanel" hidden>
+              <div class="custom-weight-header"><strong>每日相对权重</strong><span>数值越大，当天生成的线索越多；允许填 0。</span></div>
+              <div class="custom-weight-list" id="customWeightList"></div>
             </div>
-          </details>
+          </section>
         </form>
-        <p class="generator-note">每次生成会替换当前数据，支持 1–500 条；来电时间按时段和日期权重分布，通话状态按设定比例精确生成。</p>
+        <p class="generator-note">每次生成会替换当前数据，支持 1–500 条；来电时间按所选日期权重随机生成，新店铺会随机分配 shopId。</p>
       </section>
 
       <section class="filter-card">
