@@ -3,7 +3,7 @@
   const STORAGE_KEY = 'lead-generator-zip-template-v1';
   const state = { leads: [], filtered: [], showFullPhone: false, shopId: '', activeStoreName: '', sessionShopIds: new Map(), customDateWeights: new Map(), currentPage: 1, pageSize: 20 };
   const els = {
-    form: $('#generatorForm'), storeName: $('#storeName'), startTime: $('#startTime'), endTime: $('#endTime'), leadCount: $('#leadCount'), dateWeight: $('#dateWeight'), customWeightPanel: $('#customWeightPanel'), customWeightList: $('#customWeightList'), weightDescription: $('#weightDescription'),
+    form: $('#generatorForm'), storeName: $('#storeName'), startTime: $('#startTime'), endTime: $('#endTime'), leadCount: $('#leadCount'), dailyStartTime: $('#dailyStartTime'), dailyEndTime: $('#dailyEndTime'), connectRate: $('#connectRate'), dateWeight: $('#dateWeight'), customWeightPanel: $('#customWeightPanel'), customWeightList: $('#customWeightList'), weightDescription: $('#weightDescription'),
     body: $('#leadTableBody'), empty: $('#emptyState'), count: $('#visibleCount'), pageSummary: $('#pageSummary'),
     headerShopName: $('#headerShopName'), idFilter: $('#idFilter'), phoneFilter: $('#phoneFilter'), channelFilter: $('#channelFilter'), filterStartDate: $('#filterStartDate'), filterEndDate: $('#filterEndDate'),
     pageSize: $('#pageSize'), pageButtons: $('#pageButtons'), prevPage: $('#prevPage'), nextPage: $('#nextPage'), gotoPage: $('#gotoPage'),
@@ -33,6 +33,11 @@
   const showToast = (message) => { els.toast.textContent = message; els.toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => els.toast.classList.remove('show'), 2300); };
   const dateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`;
   const weekdayNames = ['周日','周一','周二','周三','周四','周五','周六'];
+  const parseClockSeconds = (value) => {
+    const parts = String(value).split(':').map(Number);
+    if (parts.length < 2 || parts.some(Number.isNaN)) return NaN;
+    return parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
+  };
 
   function buildDateBuckets(startMs, endMs) {
     const buckets = [];
@@ -44,6 +49,15 @@
       cursor.setDate(cursor.getDate() + 1);
     }
     return buckets.filter((bucket) => bucket.start <= bucket.end);
+  }
+
+  function buildCallableDateBuckets(startMs, endMs, dailyStartSeconds, dailyEndSeconds) {
+    return buildDateBuckets(startMs, endMs).map((bucket) => {
+      const day = new Date(bucket.start); day.setHours(0, 0, 0, 0);
+      const allowedStart = day.getTime() + dailyStartSeconds * 1000;
+      const allowedEnd = day.getTime() + dailyEndSeconds * 1000 + 999;
+      return {...bucket, start:Math.max(bucket.start, allowedStart), end:Math.min(bucket.end, allowedEnd)};
+    }).filter((bucket) => bucket.start <= bucket.end);
   }
 
   function renderCustomWeights() {
@@ -73,13 +87,15 @@
   function setDefaults() {
     const end = new Date(); end.setSeconds(0, 0);
     const start = new Date(end); start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0);
-    els.startTime.value = toLocalInput(start); els.endTime.value = toLocalInput(end);
+    els.startTime.value = toLocalInput(start); els.endTime.value = toLocalInput(end); els.dailyStartTime.value = '08:30:00'; els.dailyEndTime.value = '23:59:59'; els.connectRate.value = 90;
     els.storeName.value = '先驰汽车上门补胎修车搭电道路救援'; els.leadCount.value = 9;
   }
-  function createLeads(storeName, startMs, endMs, count, weightMode) {
+  function createLeads(storeName, startMs, endMs, count, weightMode, dailyStartSeconds, dailyEndSeconds, connectRate) {
     const usedIds = new Set(); const shopId = getSessionShopId(storeName); state.shopId = shopId;
-    const statuses = [{label:'接通',recording:true},{label:'接通',recording:true},{label:'接通',recording:true},{label:'接通',recording:true},{label:'网民中止呼叫',recording:false}];
-    const buckets = buildDateBuckets(startMs, endMs);
+    const connectedCount = Math.round(count * connectRate / 100);
+    const calls = Array.from({length:count}, (_, index) => index < connectedCount ? {label:'接通',recording:true} : {label:'网民中止呼叫',recording:false});
+    for (let index = calls.length - 1; index > 0; index--) { const target = randomInt(0, index); [calls[index], calls[target]] = [calls[target], calls[index]]; }
+    const buckets = buildCallableDateBuckets(startMs, endMs, dailyStartSeconds, dailyEndSeconds);
     const weights = buckets.map((bucket, index) => {
       if (weightMode === 'recent') return buckets.length === 1 ? 1 : 1 + (index / (buckets.length - 1)) * 2;
       if (weightMode === 'workday') return bucket.day >= 1 && bucket.day <= 5 ? 3 : 1;
@@ -93,13 +109,13 @@
       for (let i = 0; i < weights.length; i++) { target -= weights[i]; if (target < 0) { index = i; break; } }
       return new Date(randomInt(buckets[index].start, buckets[index].end)).toISOString();
     };
-    return Array.from({length: count}, () => {
-      const call = randomOf(statuses); const phone = randomPhone();
+    return Array.from({length: count}, (_, index) => {
+      const call = calls[index]; const phone = randomPhone();
       return { plan:'电话', id:randomId(usedIds), shopId, storeName, phone, virtual:'-', source:'查看线索来源', channel:'店铺会员/流量宝', time:weightedTime(), recording:call.recording, status:call.label };
     }).sort((a,b) => new Date(b.time) - new Date(a.time));
   }
   function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({leads:state.leads, shopId:state.shopId, storeName:state.activeStoreName, startTime:els.startTime.value, endTime:els.endTime.value, leadCount:els.leadCount.value, dateWeight:els.dateWeight.value, customDateWeights:Object.fromEntries(state.customDateWeights)}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({leads:state.leads, shopId:state.shopId, storeName:state.activeStoreName, startTime:els.startTime.value, endTime:els.endTime.value, leadCount:els.leadCount.value, dailyStartTime:els.dailyStartTime.value, dailyEndTime:els.dailyEndTime.value, connectRate:els.connectRate.value, dateWeight:els.dateWeight.value, customDateWeights:Object.fromEntries(state.customDateWeights)}));
   }
   function load() {
     setDefaults();
@@ -108,7 +124,7 @@
       state.leads = saved.leads.map((lead) => ({...lead, plan:'电话'})); state.shopId = saved.shopId || '';
       state.activeStoreName = saved.storeName || state.leads[0].storeName;
       if (state.activeStoreName && /^\d{9}$/.test(state.shopId)) state.sessionShopIds.set(state.activeStoreName, state.shopId);
-      els.storeName.value = state.activeStoreName; els.startTime.value = saved.startTime || els.startTime.value; els.endTime.value = saved.endTime || els.endTime.value; els.leadCount.value = saved.leadCount || state.leads.length;
+      els.storeName.value = state.activeStoreName; els.startTime.value = saved.startTime || els.startTime.value; els.endTime.value = saved.endTime || els.endTime.value; els.leadCount.value = saved.leadCount || state.leads.length; els.dailyStartTime.value = saved.dailyStartTime || els.dailyStartTime.value; els.dailyEndTime.value = saved.dailyEndTime || els.dailyEndTime.value; els.connectRate.value = saved.connectRate ?? els.connectRate.value;
       if (['uniform','recent','workday','custom'].includes(saved.dateWeight)) els.dateWeight.value = saved.dateWeight;
       if (saved.customDateWeights && typeof saved.customDateWeights === 'object') state.customDateWeights = new Map(Object.entries(saved.customDateWeights));
       els.filterStartDate.value = els.startTime.value.slice(0, 10); els.filterEndDate.value = els.endTime.value.slice(0, 10);
@@ -144,12 +160,17 @@
     render(); return true;
   }
   function generate(event) {
-    event?.preventDefault(); const name = els.storeName.value.trim(); const start = new Date(els.startTime.value); const end = new Date(els.endTime.value); const count = Number(els.leadCount.value); const weightMode = els.dateWeight.value;
+    event?.preventDefault(); const name = els.storeName.value.trim(); const start = new Date(els.startTime.value); const end = new Date(els.endTime.value); const count = Number(els.leadCount.value); const weightMode = els.dateWeight.value; const dailyStartSeconds = parseClockSeconds(els.dailyStartTime.value); const dailyEndSeconds = parseClockSeconds(els.dailyEndTime.value); const connectRate = Number(els.connectRate.value);
     if (!name) return showToast('请输入店铺名称'); if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return showToast('请选择完整的时间范围');
     if (start >= end) return showToast('结束时间需要晚于开始时间'); if (!Number.isInteger(count) || count < 1 || count > 500) return showToast('线索数量请设置为 1–500');
+    if (Number.isNaN(dailyStartSeconds) || Number.isNaN(dailyEndSeconds)) return showToast('请选择完整的每日电话时间');
+    if (dailyStartSeconds > dailyEndSeconds) return showToast('每日结束时间不能早于开始时间');
+    if (!Number.isFinite(connectRate) || connectRate < 0 || connectRate > 100) return showToast('接通比例请输入 0–100 之间的数值');
+    const callableBuckets = buildCallableDateBuckets(start.getTime(), end.getTime(), dailyStartSeconds, dailyEndSeconds);
+    if (!callableBuckets.length) return showToast('所选日期范围与每日电话时间限制没有交集');
     document.querySelectorAll('[data-weight-date]').forEach((input) => state.customDateWeights.set(input.dataset.weightDate, Math.max(0, Number(input.value) || 0)));
-    if (weightMode === 'custom') { const buckets = buildDateBuckets(start.getTime(), end.getTime()); if (!buckets.some((bucket) => (Number(state.customDateWeights.get(bucket.key)) || 0) > 0)) return showToast('自定义日期权重不能全部为 0'); }
-    state.leads = createLeads(name, start.getTime(), end.getTime(), count, weightMode); state.activeStoreName = name; state.filtered = [...state.leads]; state.showFullPhone = false; state.currentPage = 1;
+    if (weightMode === 'custom' && !callableBuckets.some((bucket) => (Number(state.customDateWeights.get(bucket.key)) || 0) > 0)) return showToast('可生成日期的自定义权重不能全部为 0');
+    state.leads = createLeads(name, start.getTime(), end.getTime(), count, weightMode, dailyStartSeconds, dailyEndSeconds, connectRate); state.activeStoreName = name; state.filtered = [...state.leads]; state.showFullPhone = false; state.currentPage = 1;
     els.idFilter.value=''; els.phoneFilter.value=''; els.channelFilter.value=''; els.filterStartDate.value=els.startTime.value.slice(0,10); els.filterEndDate.value=els.endTime.value.slice(0,10); document.querySelectorAll('.quick-dates button').forEach(b=>b.classList.remove('selected'));
     save(); render(); showToast(`已生成 ${count} 条电话线索 · shopId ${state.shopId}`);
   }

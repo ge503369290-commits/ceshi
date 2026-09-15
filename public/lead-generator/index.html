@@ -77,8 +77,13 @@
           <label class="field count-field"><span>线索数量</span><div class="number-control"><button type="button" data-step="-1">−</button><input id="leadCount" name="leadCount" type="number" min="1" max="500" value="9" required /><button type="button" data-step="1">＋</button></div></label>
           <button class="generate-button" type="submit"><span>✦</span><b>确认并生成</b></button>
           <section class="advanced-settings" aria-labelledby="advancedSettingsTitle">
-            <div class="advanced-heading"><strong id="advancedSettingsTitle">高级生成设置</strong><span>控制线索在日期范围内的分布</span></div>
+            <div class="advanced-heading"><strong id="advancedSettingsTitle">高级生成设置</strong><span>控制每日来电时段与日期分布</span></div>
             <div class="advanced-grid">
+              <div class="daily-time-limit" role="group" aria-label="每日电话时间限制">
+                <label class="field"><span>每日开始时间</span><input id="dailyStartTime" name="dailyStartTime" type="time" step="1" value="08:30:00" required /></label>
+                <label class="field"><span>每日结束时间</span><input id="dailyEndTime" name="dailyEndTime" type="time" step="1" value="23:59:59" required /></label>
+              </div>
+              <label class="field connect-rate-field"><span>接通比例</span><span class="percent-control"><input id="connectRate" name="connectRate" type="number" min="0" max="100" step="0.1" value="90" required /><b>%</b></span></label>
               <label class="field weight-field"><span>日期权重</span><select id="dateWeight" name="dateWeight"><option value="uniform">均匀分布</option><option value="recent">近期日期优先</option><option value="workday">工作日优先</option><option value="custom">自定义逐日权重</option></select></label>
               <p class="weight-description" id="weightDescription">范围内每个日期获得相同的生成概率。</p>
             </div>
@@ -88,7 +93,7 @@
             </div>
           </section>
         </form>
-        <p class="generator-note">每次生成会替换当前数据，支持 1–500 条；来电时间按所选日期权重随机生成，新店铺会随机分配 shopId。</p>
+        <p class="generator-note">每次生成会替换当前数据，支持 1–500 条；来电时间受每日时段与日期权重共同限制，未接通线索统一为“网民中止呼叫”。</p>
       </section>
 
       <section class="filter-card">
