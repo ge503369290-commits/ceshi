@@ -44,3 +44,33 @@ test("merchant imports deduplicate phones and exports are audited for employees"
   assert.equal(removed.data.deletedRows, 2);
   assert.equal(run("/api/merchant/overview", "GET", employee).data.totalRecords, 0);
 });
+
+test("the same shop can appear in separate city and industry groups", () => {
+  const db = emptyMerchantDb();
+  let sequence = 0;
+  const run = (path, method, body = {}) => handleMerchantAction(db, {
+    path, method, body, user: admin, uid: (prefix) => `${prefix}_${++sequence}`,
+    now: () => "2026-10-13T08:00:00.000Z"
+  });
+  const repairId = run("/api/merchant/industries", "POST", { name: "汽车维修" }).data.industry.id;
+  const washId = run("/api/merchant/industries", "POST", { name: "汽车美容" }).data.industry.id;
+  const item = (city, industryId) => ({ fileName: `${city}.xlsx`, province: "内蒙古自治区", city,
+    industryId, invalidRows: 0, records: [{ name: "同一店铺", phone: "13800000000", address: `${city}一号` }] });
+
+  run("/api/merchant/imports", "POST", { items: [item("鄂尔多斯市", repairId), item("鄂尔多斯市", washId)] });
+  const duplicate = run("/api/merchant/imports", "POST", { items: [item("鄂尔多斯市", repairId)] });
+  assert.equal(duplicate.data.results[0].duplicateRows, 1);
+  const groups = run("/api/merchant/overview", "GET").data.breakdown;
+  assert.equal(groups.length, 2);
+  assert.deepEqual(new Set(groups.map((group) => group.industryName)), new Set(["汽车维修", "汽车美容"]));
+  for (const group of groups) {
+    assert.equal(group.recordCount, 1);
+    const exported = run("/api/merchant/export", "POST", { filters: {
+      province: group.province, city: group.city, industryId: group.industryId
+    } });
+    assert.equal(exported.data.rows.length, 1);
+    assert.equal(exported.data.rows[0]["店名"], "同一店铺");
+    assert.equal(exported.data.record.industryName, group.industryName);
+  }
+  assert.equal(db.exportRecords.length, 2);
+});

@@ -92,7 +92,10 @@ function importOne(db, item, id, timestamp) {
   }
   const invalidRows = Number(item.invalidRows);
   if (!Number.isInteger(invalidRows) || invalidRows < 0) fail("无效行数错误");
-  const used = new Set(db.merchants.map((row) => row.phoneKey));
+  const scopeKey = (key) => JSON.stringify([province, city, selectedIndustry.id, key]);
+  const used = new Set(db.merchants
+    .filter((row) => row.province === province && row.city === city && row.industryId === selectedIndustry.id)
+    .map((row) => scopeKey(row.phoneKey)));
   const newRows = [];
   let duplicateRows = 0;
   let rejectedRows = 0;
@@ -102,8 +105,8 @@ function importOne(db, item, id, timestamp) {
     const address = text(record?.address, 500);
     const key = phoneKey(phone);
     if (!key) { rejectedRows += 1; continue; }
-    if (used.has(key)) { duplicateRows += 1; continue; }
-    used.add(key);
+    if (used.has(scopeKey(key))) { duplicateRows += 1; continue; }
+    used.add(scopeKey(key));
     newRows.push({ id: `${id}_${newRows.length}`, name, phone, phoneKey: key, address,
       province, city, industryId: selectedIndustry.id, importId: id, createdAt: timestamp });
   }

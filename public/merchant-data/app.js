@@ -2,7 +2,7 @@
   const root = document.querySelector("#app");
   const state = { user: null, view: "overview", overview: null, industries: [], imports: [],
     exports: [], options: { locations: [], industries: [] }, staged: [],
-    filters: { province: "", city: "", industryId: "" }, count: 0, busy: false };
+    filters: { province: "", city: "", industryId: "" }, citySearch: "", busy: false };
   const provinces = ["内蒙古自治区","广西壮族自治区","西藏自治区","宁夏回族自治区","新疆维吾尔自治区",
     "香港特别行政区","澳门特别行政区","北京市","天津市","上海市","重庆市","河北省","山西省","辽宁省",
     "吉林省","黑龙江省","江苏省","浙江省","安徽省","福建省","江西省","山东省","河南省","湖北省",
@@ -107,7 +107,6 @@
         api("/api/merchant/overview"), api("/api/merchant/options")]);
       state.overview = overview;
       state.options = optionData;
-      await updateCount();
     } else if (state.view === "exports") {
       state.exports = (await api("/api/merchant/exports")).exportRecords;
     } else if (state.user.role === "admin" && ["import","imports"].includes(state.view)) {
@@ -120,30 +119,33 @@
     }
   }
 
-  async function updateCount() {
-    state.count = (await api("/api/merchant/count", { method: "POST",
-      body: JSON.stringify({ filters: state.filters }) })).count;
-  }
-
   function overviewHtml() {
     const data = state.overview;
     const locations = state.options.locations;
     const provincesList = [...new Set(locations.map((item) => item.province))].map((value) => ({ value, label: value }));
-    const cities = locations.filter((item) => !state.filters.province || item.province === state.filters.province)
+    const citySearch = state.citySearch.trim().toLocaleLowerCase();
+    const cities = locations.filter((item) => (!state.filters.province || item.province === state.filters.province) &&
+        (!citySearch || item.city.toLocaleLowerCase().includes(citySearch)))
       .map((item) => ({ value: item.city, label: item.city }));
+    const breakdown = data.breakdown.filter((row) =>
+      (!state.filters.province || row.province === state.filters.province) &&
+      (!state.filters.city || row.city === state.filters.city) &&
+      (!state.filters.industryId || row.industryId === state.filters.industryId) &&
+      (!citySearch || row.city.toLocaleLowerCase().includes(citySearch)));
+    const canExportSelection = state.filters.province && state.filters.city && state.filters.industryId && breakdown.length;
     return `<div class="metrics">
       ${[["商户数据",data.totalRecords],["覆盖城市",data.totalCities],["行业",data.totalIndustries],["导入批次",data.totalImports]]
         .map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`).join("")}
     </div>
-    <section class="band"><div class="section-head"><h2>筛选与导出</h2><span class="muted">匹配 <span class="result-count">${state.count}</span> 条</span></div>
+    <section class="band"><div class="section-head"><h2>筛选与导出</h2><input class="city-search" id="citySearch" type="search" aria-label="搜索城市" placeholder="搜索城市" value="${esc(state.citySearch)}" /></div>
       <div class="controls">
         <label class="field"><span>省份</span><select data-filter="province">${options(provincesList,state.filters.province,"全部省份")}</select></label>
         <label class="field"><span>城市</span><select data-filter="city">${options(cities,state.filters.city,"全部城市")}</select></label>
         <label class="field"><span>行业</span><select data-filter="industryId">${options(state.options.industries.map((item) => ({ value:item.id,label:item.name })),state.filters.industryId,"全部行业")}</select></label>
-        <button class="btn" data-action="export" ${state.busy || !state.count || !state.filters.province || !state.filters.city || !state.filters.industryId ? "disabled" : ""}>导出 Excel</button>
+        <button class="btn" data-action="export" ${state.busy || !canExportSelection ? "disabled" : ""}>导出 Excel</button>
       </div></section>
     <section class="band"><div class="section-head"><h2>地区与行业分布</h2></div>
-      ${data.breakdown.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>省份</th><th>城市</th><th>行业</th><th>商户数量</th></tr></thead><tbody>${data.breakdown.map((row) => `<tr><td>${esc(row.province)}</td><td>${esc(row.city)}</td><td>${esc(row.industryName)}</td><td>${row.recordCount}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">暂无商户数据</div>`}
+      ${breakdown.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>省份</th><th>城市</th><th>行业</th><th>商户数量</th><th>操作</th></tr></thead><tbody>${breakdown.map((row) => `<tr><td>${esc(row.province)}</td><td>${esc(row.city)}</td><td>${esc(row.industryName)}</td><td>${row.recordCount}</td><td><button class="btn secondary small" data-export-group data-province="${esc(row.province)}" data-city="${esc(row.city)}" data-industry-id="${esc(row.industryId)}" ${state.busy ? "disabled" : ""}>导出 Excel</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">暂无符合条件的城市与行业</div>`}
     </section>`;
   }
 
@@ -193,13 +195,13 @@
 
   async function refresh() { await loadView(); render(); }
 
-  async function exportWorkbook() {
-    const { province, city, industryId } = state.filters;
+  async function exportWorkbook(filters = state.filters) {
+    const { province, city, industryId } = filters;
     if (!province || !city || !industryId) return toast("请选择省份、城市和行业", true);
     state.busy = true; render();
     let exportedCount = 0;
     try {
-      const result = await api("/api/merchant/export", { method: "POST", body: JSON.stringify({ filters: state.filters }) });
+      const result = await api("/api/merchant/export", { method: "POST", body: JSON.stringify({ filters }) });
       const sheet = XLSX.utils.json_to_sheet(result.rows, { header: ["店名","电话","地址"] });
       sheet["!cols"] = [{ wch: 28 },{ wch: 18 },{ wch: 58 }];
       const book = XLSX.utils.book_new();
@@ -207,7 +209,9 @@
       const bytes = XLSX.write(book, { bookType: "xlsx", type: "array", compression: true });
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const link = document.createElement("a");
-      link.href = url; link.download = `${city}${result.record.industryName}${new Date().getMonth()+1}月${new Date().getDate()}日.xlsx`;
+      const today = new Date();
+      const filePart = (value) => String(value).replace(/[<>:"/\\|?*]/g, "_");
+      link.href = url; link.download = `${filePart(city)}-${filePart(result.record.industryName)}-${today.getMonth()+1}月${today.getDate()}日.xlsx`;
       link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       exportedCount = result.rows.length;
     } finally { state.busy = false; render(); }
@@ -223,7 +227,13 @@
       return;
     }
     try {
-      if (event.target.closest('[data-action="export"]')) await exportWorkbook();
+      const groupExport = event.target.closest("[data-export-group]");
+      if (groupExport && !state.busy) await exportWorkbook({
+        province: groupExport.dataset.province,
+        city: groupExport.dataset.city,
+        industryId: groupExport.dataset.industryId
+      });
+      else if (event.target.closest('[data-action="export"]') && !state.busy) await exportWorkbook();
       const commit = event.target.closest('[data-action="commit"]');
       if (commit && !state.busy) {
         const invalid = state.staged.find((item) => !item.province.trim() || !item.city.trim() || !item.industryId);
@@ -266,7 +276,7 @@
       const key = event.target.dataset.filter;
       state.filters[key] = event.target.value;
       if (key === "province") state.filters.city = "";
-      try { await updateCount(); render(); } catch (error) { toast(error.message, true); }
+      render();
     }
     if (event.target.matches("[data-stage]")) {
       state.staged[Number(event.target.dataset.index)][event.target.dataset.stage] = event.target.value;
@@ -284,6 +294,26 @@
       render();
       if (failures.length) toast(failures.join("；"), true);
     }
+  });
+
+  function applyCitySearch(input) {
+    state.citySearch = input.value;
+    if (state.filters.city && !state.filters.city.toLocaleLowerCase().includes(state.citySearch.trim().toLocaleLowerCase())) {
+      state.filters.city = "";
+    }
+    const cursor = input.selectionStart;
+    render();
+    const search = root.querySelector("#citySearch");
+    search.focus();
+    search.setSelectionRange(cursor, cursor);
+  }
+
+  root.addEventListener("input", (event) => {
+    if (event.target.id === "citySearch" && !event.isComposing) applyCitySearch(event.target);
+  });
+
+  root.addEventListener("compositionend", (event) => {
+    if (event.target.id === "citySearch") applyCitySearch(event.target);
   });
 
   root.addEventListener("submit", async (event) => {
