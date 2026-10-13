@@ -7,7 +7,7 @@
     "dev": "npx netlify dev",
     "dev:cloudflare": "wrangler dev",
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --check netlify/functions/api.mjs && node --check functions/api/[[path]].js && node --check worker.js",
+    "check": "node --check server.js && node --check public/app.js && node --check public/merchant-data/app.js && node --check merchant-core.mjs && node --check netlify/functions/api.mjs && node --check functions/api/[[path]].js && node --check worker.js && node --test tests/merchant-core.test.mjs",
     "build": "npm run check",
     "deploy": "wrangler deploy",
     "cf:check": "wrangler check"

@@ -1,3 +1,5 @@
+import { handleMerchantAction, emptyMerchantDb } from "../../merchant-core.mjs";
+
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const MAX_JSON_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -21,6 +23,7 @@ const TEXT_STYLE_COLORS = [
 ];
 const PASSWORD_HASH_ITERATIONS = 100000;
 const DB_KEY = "db";
+const MERCHANT_DB_KEY = "merchant-data";
 
 function now() {
   return new Date().toISOString();
@@ -181,6 +184,14 @@ async function readDb(env) {
 
 async function writeDb(env, db) {
   await env.TRAINING_DB.put(DB_KEY, JSON.stringify(db));
+}
+
+async function readMerchantDb(env) {
+  return (await env.TRAINING_DB.get(MERCHANT_DB_KEY, "json")) || emptyMerchantDb();
+}
+
+async function writeMerchantDb(env, db) {
+  await env.TRAINING_DB.put(MERCHANT_DB_KEY, JSON.stringify(db));
 }
 
 function ensureFeedbacks(db) {
@@ -479,6 +490,23 @@ async function route(req, env) {
   }
 
   const user = await requireUser(req, env, db);
+
+  if (pathname.startsWith("/api/merchant/")) {
+    const merchantDb = await readMerchantDb(env);
+    const result = handleMerchantAction(merchantDb, {
+      path: pathname, method,
+      body: ["POST", "PUT"].includes(method) ? await readJson(req) : {},
+      user, uid, now
+    });
+    if (result.changed) {
+      await writeMerchantDb(env, merchantDb);
+      if (result.audit) {
+        audit(db, user, result.audit.action, result.audit.target, result.audit.detail);
+        await writeDb(env, db);
+      }
+    }
+    return json(result.data, result.status || 200);
+  }
 
   if (pathname === "/api/bootstrap" && method === "GET") {
     return json({

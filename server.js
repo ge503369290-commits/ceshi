@@ -2,11 +2,13 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const merchantCore = import("./merchant-core.mjs");
 
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DB_PATH = path.join(ROOT, "data", "db.json");
+const MERCHANT_DB_PATH = path.join(ROOT, "data", "merchant-data.json");
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const MAX_JSON_BYTES = 60 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -127,6 +129,17 @@ function readDb() {
 
 function writeDb(db) {
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+}
+
+function readMerchantDb() {
+  return fs.existsSync(MERCHANT_DB_PATH)
+    ? JSON.parse(fs.readFileSync(MERCHANT_DB_PATH, "utf8"))
+    : null;
+}
+
+function writeMerchantDb(db) {
+  fs.mkdirSync(path.dirname(MERCHANT_DB_PATH), { recursive: true });
+  fs.writeFileSync(MERCHANT_DB_PATH, JSON.stringify(db));
 }
 
 function ensureFeedbacks(db) {
@@ -456,6 +469,24 @@ async function handleApi(req, res) {
     const user = requireUser(req, res, db);
     if (!user) return;
 
+    if (url.pathname.startsWith("/api/merchant/")) {
+      const { handleMerchantAction, emptyMerchantDb } = await merchantCore;
+      const merchantDb = readMerchantDb() || emptyMerchantDb();
+      const result = handleMerchantAction(merchantDb, {
+        path: url.pathname, method,
+        body: ["POST", "PUT"].includes(method) ? await readJson(req) : {},
+        user, uid, now
+      });
+      if (result.changed) {
+        writeMerchantDb(merchantDb);
+        if (result.audit) {
+          audit(db, user, result.audit.action, result.audit.target, result.audit.detail);
+          writeDb(db);
+        }
+      }
+      return send(res, result.status || 200, result.data);
+    }
+
     if (url.pathname === "/api/bootstrap" && method === "GET") {
       return send(res, 200, {
         user: publicUser(user),
@@ -635,7 +666,7 @@ async function handleApi(req, res) {
 
     send(res, 404, { error: "接口不存在" });
   } catch (error) {
-    send(res, 400, { error: error.message || "请求失败" });
+    send(res, error.status || 400, { error: error.message || "请求失败" });
   }
 }
 

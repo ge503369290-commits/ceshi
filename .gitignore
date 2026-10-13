@@ -10,3 +10,4 @@ npm-debug.log*
 .netlify/
 deno.lock
 data/db.json
+data/merchant-data.json

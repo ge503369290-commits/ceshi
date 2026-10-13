@@ -1003,7 +1003,7 @@ function renderLogin() {
 
 function renderShell() {
   const editorMode = state.view === "adminEditor";
-  const fullWidthMode = editorMode || ["leadGenerator", "compressor"].includes(state.view);
+  const fullWidthMode = editorMode || ["leadGenerator", "merchantData", "compressor"].includes(state.view);
   app.innerHTML = `
     <section class="shell">
       <div class="utility-bar">
@@ -1044,6 +1044,7 @@ function renderTabs() {
   const tabs = [
     `<button class="tab ${state.view === "library" ? "active" : ""}" data-view="library">资料库</button>`,
     `<button class="tab ${state.view === "leadGenerator" ? "active" : ""}" data-view="leadGenerator">线索数据生成</button>`,
+    `<button class="tab ${state.view === "merchantData" ? "active" : ""}" data-view="merchantData">商户数据</button>`,
     `<button class="tab ${state.view === "compressor" ? "active" : ""}" data-view="compressor">图片压缩</button>`
   ];
   if (state.user.role === "admin") {
@@ -1282,6 +1283,7 @@ function renderMainView() {
   }
   if (state.view === "adminEditor") renderMaterialEditor(target);
   else if (state.view === "leadGenerator") renderLeadGenerator(target);
+  else if (state.view === "merchantData") renderMerchantData(target);
   else if (state.view === "compressor") renderImageCompressor(target);
   else if (state.view === "admin") renderAdmin(target);
   else if (state.view === "users") renderUsers(target);
@@ -1298,6 +1300,14 @@ function renderLeadGenerator(target) {
         src="/lead-generator/index.html"
         title="电话线索数据生成软件"
       ></iframe>
+    </section>
+  `;
+}
+
+function renderMerchantData(target) {
+  target.innerHTML = `
+    <section class="lead-generator-page" aria-label="商户数据管理">
+      <iframe class="lead-generator-frame" src="/merchant-data/index.html" title="商户数据管理"></iframe>
     </section>
   `;
 }
@@ -3015,7 +3025,7 @@ async function renderLogs(target) {
         <tbody>
           ${data.auditLogs
             .map(
-              (log) => `<tr><td>${formatDate(log.createdAt)}</td><td>${escapeHtml(log.username)}</td><td>${escapeHtml(log.action)}</td><td>${escapeHtml(log.target)}</td><td>${escapeHtml(log.detail)}</td></tr>`
+              (log) => `<tr><td>${formatDate(log.createdAt)}</td><td>${escapeHtml(log.username)}</td><td>${escapeHtml({ merchant_export: "导出商户数据", merchant_import: "导入商户数据", merchant_delete_import: "删除导入记录", merchant_add_industry: "添加行业", merchant_update_industry: "修改行业", merchant_delete_industry: "删除行业" }[log.action] || log.action)}</td><td>${escapeHtml(log.target)}</td><td>${escapeHtml(log.detail)}</td></tr>`
             )
             .join("")}
         </tbody>

@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
 import { getDeployStore, getStore } from "@netlify/blobs";
+import { handleMerchantAction, emptyMerchantDb } from "../../merchant-core.mjs";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const MAX_JSON_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
 const DB_KEY = "db.json";
+const MERCHANT_DB_KEY = "merchant-data.json";
 
 function now() {
   return new Date().toISOString();
@@ -163,6 +165,14 @@ async function readDb() {
 async function writeDb(db) {
   const dbStore = store();
   await dbStore.setJSON(DB_KEY, db);
+}
+
+async function readMerchantDb() {
+  return (await store().get(MERCHANT_DB_KEY, { type: "json" })) || emptyMerchantDb();
+}
+
+async function writeMerchantDb(db) {
+  await store().setJSON(MERCHANT_DB_KEY, db);
 }
 
 function json(payload, status = 200, headers = {}) {
@@ -396,6 +406,23 @@ async function route(req) {
   }
 
   const user = requireUser(req, db);
+
+  if (pathname.startsWith("/api/merchant/")) {
+    const merchantDb = await readMerchantDb();
+    const result = handleMerchantAction(merchantDb, {
+      path: pathname, method,
+      body: ["POST", "PUT"].includes(method) ? await readJson(req) : {},
+      user, uid, now
+    });
+    if (result.changed) {
+      await writeMerchantDb(merchantDb);
+      if (result.audit) {
+        audit(db, user, result.audit.action, result.audit.target, result.audit.detail);
+        await writeDb(db);
+      }
+    }
+    return json(result.data, result.status || 200);
+  }
 
   if (pathname === "/api/bootstrap" && method === "GET") {
     return json({
