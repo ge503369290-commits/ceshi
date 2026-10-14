@@ -101,6 +101,16 @@
       `<option value="${esc(item.value)}" ${String(item.value) === String(selected) ? "selected" : ""}>${esc(item.label)}</option>`).join("")}`;
   }
 
+  function matchIndustry(fileName, industries) {
+    const normalize = (value) => String(value).normalize("NFKC").toLocaleLowerCase()
+      .replace(/[\s\p{P}\p{S}]+/gu, "");
+    const name = normalize(fileName.replace(/\.[^.]+$/, ""));
+    const matches = industries.filter((item) => normalize(item.name) && name.includes(normalize(item.name)))
+      .sort((a, b) => normalize(b.name).length - normalize(a.name).length);
+    if (!matches.length || (matches[1] && normalize(matches[0].name).length === normalize(matches[1].name).length)) return "";
+    return matches[0].id;
+  }
+
   async function loadView() {
     if (state.view === "overview") {
       const [overview, optionData] = await Promise.all([
@@ -161,8 +171,10 @@
 
   function importHtml() {
     return `<section class="band"><div class="section-head"><h2>导入线索</h2></div>
-      <div class="file-picker"><input id="importFiles" type="file" accept=".xlsx,.xls,.csv" multiple />
-        <span class="muted">表格列名：店名、电话、地址</span></div>${stageHtml()}</section>`;
+      <div class="file-picker"><input id="importFiles" type="file" accept=".xlsx,.xls,.csv" multiple ${state.busy ? "disabled" : ""} />
+        <span class="muted">表格列名：店名、电话、地址</span>
+        <div class="bulk-industry"><label class="field"><span>批量修改行业</span><select id="bulkIndustry" ${!state.staged.length || state.busy ? "disabled" : ""}>${options(state.industries.map((item) => ({ value:item.id,label:item.name })),"","选择行业")}</select></label>
+          <button class="btn secondary" data-action="bulk-industry" disabled>应用全部</button></div></div>${stageHtml()}</section>`;
   }
 
   function importsHtml() {
@@ -187,8 +199,7 @@
   function render() {
     const tabs = [["overview","数据概览"],["import","导入线索"],["imports","导入记录"],["industries","行业设置"],["exports","导出记录"]]
       .filter(([key]) => state.user.role === "admin" || ["overview","exports"].includes(key));
-    root.innerHTML = `<header class="top"><div><h1>商户数据</h1><p class="subtitle">${state.view === "overview" ? "地区与行业数据概览" : esc(tabs.find(([key]) => key === state.view)?.[1] || "")}</p></div><span class="account">${esc(state.user.displayName)} · ${state.user.role === "admin" ? "管理员" : "普通账号"}</span></header>
-      <nav class="tabs">${tabs.map(([key,label]) => `<button type="button" data-view="${key}" class="${state.view === key ? "active" : ""}">${label}</button>`).join("")}</nav>
+    root.innerHTML = `<nav class="tabs">${tabs.map(([key,label]) => `<button type="button" data-view="${key}" class="${state.view === key ? "active" : ""}">${label}</button>`).join("")}</nav>
       <main class="content">${state.view === "overview" ? overviewHtml() : state.view === "import" ? importHtml() : state.view === "imports" ? importsHtml() : state.view === "industries" ? industriesHtml() : exportsHtml()}</main>
       <div class="toast" id="toast" role="status" hidden></div>`;
   }
@@ -227,6 +238,15 @@
       return;
     }
     try {
+      const bulkIndustry = event.target.closest('[data-action="bulk-industry"]');
+      if (bulkIndustry && state.staged.length && !state.busy) {
+        const industryId = root.querySelector("#bulkIndustry").value;
+        if (!industryId) return toast("请先选择行业", true);
+        state.staged.forEach((item) => { item.industryId = industryId; });
+        render();
+        toast(`已修改 ${state.staged.length} 个文件的行业`);
+        return;
+      }
       const groupExport = event.target.closest("[data-export-group]");
       if (groupExport && !state.busy) await exportWorkbook({
         province: groupExport.dataset.province,
@@ -281,18 +301,26 @@
     if (event.target.matches("[data-stage]")) {
       state.staged[Number(event.target.dataset.index)][event.target.dataset.stage] = event.target.value;
     }
+    if (event.target.id === "bulkIndustry") {
+      root.querySelector('[data-action="bulk-industry"]').disabled = !event.target.value;
+    }
     if (event.target.id === "importFiles") {
       const files = [...event.target.files];
       if (files.length > 20) return toast("一次最多选择 20 个文件", true);
       const parsed = [];
       const failures = [];
       for (const file of files) {
-        try { parsed.push(await parseFile(file)); }
+        try {
+          const item = await parseFile(file);
+          item.industryId = matchIndustry(file.name, state.industries);
+          parsed.push(item);
+        }
         catch (error) { failures.push(`${file.name}: ${error.message}`); }
       }
       state.staged = parsed;
       render();
       if (failures.length) toast(failures.join("；"), true);
+      else if (parsed.length) toast(`已从文件名识别 ${parsed.filter((item) => item.industryId).length} 个文件的行业`);
     }
   });
 
