@@ -19,6 +19,6 @@
     "@netlify/blobs": "^10.7.9"
   },
   "devDependencies": {
-    "wrangler": "^4.100.0"
+    "wrangler": "^4.150.0"
   }
 }

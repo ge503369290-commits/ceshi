@@ -92,7 +92,7 @@
       if (!normalizePhone(phone)) { invalidRows++; continue; }
       records.push({ name, phone, address });
     }
-    if (records.length > 10000) throw new Error("单个文件最多导入 10000 条有效数据");
+    if (records.length > 900) throw new Error("免费版为保证导入原子性，单个文件最多导入 900 条有效数据");
     return { fileName: file.name, records, invalidRows, ...majorityLocation(records), industryId: "" };
   }
 

@@ -1,4 +1,25 @@
-import { handleMerchantAction, emptyMerchantDb } from "../../merchant-core.mjs";
+import {
+  createFeedback,
+  createUser,
+  deleteMaterial,
+  deleteUser,
+  getSetupRequired,
+  getUserById,
+  getUserByUsername,
+  handleMerchantRequest,
+  listAuditLogs,
+  listFeedbacks,
+  listUsers,
+  readMaterial,
+  readMaterialIndex,
+  readTaxonomy,
+  recordAudit,
+  reorderMaterials,
+  setSetupRequired,
+  updateUser,
+  writeMaterial,
+  writeTaxonomy
+} from "../../cloudflare-store.mjs";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
 const MAX_JSON_BYTES = 12 * 1024 * 1024;
@@ -22,8 +43,6 @@ const TEXT_STYLE_COLORS = [
   "#d946ef"
 ];
 const PASSWORD_HASH_ITERATIONS = 100000;
-const DB_KEY = "db";
-const MERCHANT_DB_KEY = "merchant-data";
 
 function now() {
   return new Date().toISOString();
@@ -171,34 +190,6 @@ async function seedDb(env) {
   };
 }
 
-async function readDb(env) {
-  if (!env.TRAINING_DB) {
-    throw Object.assign(new Error("缺少 Cloudflare KV 绑定 TRAINING_DB"), { status: 500 });
-  }
-  const db = await env.TRAINING_DB.get(DB_KEY, "json");
-  if (db) return db;
-  const seeded = await seedDb(env);
-  await env.TRAINING_DB.put(DB_KEY, JSON.stringify(seeded));
-  return seeded;
-}
-
-async function writeDb(env, db) {
-  await env.TRAINING_DB.put(DB_KEY, JSON.stringify(db));
-}
-
-async function readMerchantDb(env) {
-  return (await env.TRAINING_DB.get(MERCHANT_DB_KEY, "json")) || emptyMerchantDb();
-}
-
-async function writeMerchantDb(env, db) {
-  await env.TRAINING_DB.put(MERCHANT_DB_KEY, JSON.stringify(db));
-}
-
-function ensureFeedbacks(db) {
-  if (!Array.isArray(db.feedbacks)) db.feedbacks = [];
-  return db.feedbacks;
-}
-
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -230,26 +221,27 @@ function cookieMap(req) {
   );
 }
 
-async function getSessionUser(req, env, db) {
+async function getSessionUser(req, env) {
   const session = await readSession(cookieMap(req).session, env);
   if (!session) return null;
-  return db.users.find((item) => item.id === session.userId && item.active) || null;
+  const user = await getUserById(env, session.userId);
+  return user?.active ? user : null;
 }
 
-async function requireUser(req, env, db) {
-  const user = await getSessionUser(req, env, db);
+async function requireUser(req, env) {
+  const user = await getSessionUser(req, env);
   if (!user) throw Object.assign(new Error("请先登录"), { status: 401 });
   return user;
 }
 
-async function requireAdmin(req, env, db) {
-  const user = await requireUser(req, env, db);
+async function requireAdmin(req, env) {
+  const user = await requireUser(req, env);
   if (user.role !== "admin") throw Object.assign(new Error("只有管理员可以执行该操作"), { status: 403 });
   return user;
 }
 
-function audit(db, user, action, target, detail = "") {
-  db.auditLogs.unshift({
+function auditEntry(user, action, target, detail = "") {
+  return {
     id: uid("log"),
     userId: user.id,
     username: user.username,
@@ -257,8 +249,7 @@ function audit(db, user, action, target, detail = "") {
     target,
     detail,
     createdAt: now()
-  });
-  db.auditLogs = db.auditLogs.slice(0, 300);
+  };
 }
 
 async function readJson(req) {
@@ -426,11 +417,11 @@ function normalizeMaterial(payload, existing = {}) {
   };
 }
 
-function filterMaterials(db, user, query) {
+function filterMaterials(materials, user, query) {
   const q = String(query.get("q") || "").toLowerCase();
   const category = String(query.get("category") || "");
   const tag = String(query.get("tag") || "");
-  return db.materials
+  return materials
     .filter((item) => user.role === "admin" || item.status === "published")
     .filter((item) => !category || item.category === category)
     .filter((item) => !tag || item.tags.includes(tag))
@@ -440,25 +431,31 @@ function filterMaterials(db, user, query) {
     });
 }
 
-async function route(req, env) {
-  const db = await readDb(env);
-  ensureFeedbacks(db);
+async function route(req, env, waitUntil) {
   const url = new URL(req.url);
   const method = req.method;
   const pathname = url.pathname;
+  const saveAudit = async (entry) => {
+    const promise = recordAudit(env, entry);
+    if (waitUntil) {
+      waitUntil(promise);
+      return;
+    }
+    await promise;
+  };
 
   if (pathname === "/api/setup" && method === "POST") {
-    if (!db.setupRequired) return json({ error: "Setup has already been completed" }, 409);
+    if (!(await getSetupRequired(env))) return json({ error: "Setup has already been completed" }, 409);
     const body = await readJson(req);
     const password = String(body.password || "");
     if (password.length < 12) throw new Error("Password must be at least 12 characters");
-    const admin = db.users.find((item) => item.username === "admin" || item.role === "admin");
+    const users = await listUsers(env);
+    const admin = users.find((item) => item.username === "admin" || item.role === "admin");
     if (!admin) throw new Error("Admin account is missing");
     admin.passwordHash = await hashPassword(password);
     admin.active = true;
-    db.setupRequired = false;
-    audit(db, admin, "initial_setup", admin.id, "Completed initial admin setup");
-    await writeDb(env, db);
+    await Promise.all([updateUser(env, admin), setSetupRequired(env, false)]);
+    await saveAudit(auditEntry(admin, "initial_setup", admin.id, "Completed initial admin setup"));
     return json(
       { user: publicUser(admin), setupRequired: false },
       200,
@@ -468,12 +465,11 @@ async function route(req, env) {
 
   if (pathname === "/api/login" && method === "POST") {
     const body = await readJson(req);
-    const user = db.users.find((item) => item.username === String(body.username || "").trim());
+    const user = await getUserByUsername(env, String(body.username || "").trim());
     if (!user || !user.active || !(await verifyPassword(String(body.password || ""), user.passwordHash))) {
       return json({ error: "账号或密码错误" }, 401);
     }
-    audit(db, user, "login", "session", "用户登录");
-    await writeDb(env, db);
+    await saveAudit(auditEntry(user, "login", "session", "用户登录"));
     return json(
       { user: publicUser(user) },
       200,
@@ -486,34 +482,35 @@ async function route(req, env) {
   }
 
   if (pathname === "/api/me" && method === "GET") {
-    return json({ user: publicUser(await getSessionUser(req, env, db)), setupRequired: Boolean(db.setupRequired) });
+    const [user, setupRequired] = await Promise.all([getSessionUser(req, env), getSetupRequired(env)]);
+    return json({ user: publicUser(user), setupRequired });
   }
 
-  const user = await requireUser(req, env, db);
+  const user = await requireUser(req, env);
+  const adminOnly = () => {
+    if (user.role !== "admin") throw Object.assign(new Error("只有管理员可以执行该操作"), { status: 403 });
+    return user;
+  };
 
   if (pathname.startsWith("/api/merchant/")) {
-    const merchantDb = await readMerchantDb(env);
-    const result = handleMerchantAction(merchantDb, {
+    const result = await handleMerchantRequest(env, {
       path: pathname, method,
       body: ["POST", "PUT"].includes(method) ? await readJson(req) : {},
       user, uid, now
     });
-    if (result.changed) {
-      await writeMerchantDb(env, merchantDb);
-      if (result.audit) {
-        audit(db, user, result.audit.action, result.audit.target, result.audit.detail);
-        await writeDb(env, db);
-      }
+    if (result.audit) {
+      await saveAudit(auditEntry(user, result.audit.action, result.audit.target, result.audit.detail));
     }
     return json(result.data, result.status || 200);
   }
 
   if (pathname === "/api/bootstrap" && method === "GET") {
+    const [taxonomy, materials] = await Promise.all([readTaxonomy(env), readMaterialIndex(env)]);
     return json({
       user: publicUser(user),
-      categories: db.categories,
-      tags: db.tags,
-      materials: filterMaterials(db, user, url.searchParams).map((item) => ({
+      categories: taxonomy.categories,
+      tags: taxonomy.tags,
+      materials: filterMaterials(materials, user, url.searchParams).map((item) => ({
         ...item,
         body: item.body.length > 220 ? `${item.body.slice(0, 220)}...` : item.body
       }))
@@ -521,97 +518,93 @@ async function route(req, env) {
   }
 
   if (pathname === "/api/materials" && method === "GET") {
-    return json({ materials: filterMaterials(db, user, url.searchParams) });
+    const materials = await readMaterialIndex(env);
+    return json({ materials: filterMaterials(materials, user, url.searchParams) });
   }
 
   if (pathname === "/api/feedback" && method === "POST") {
     const feedback = normalizeFeedback(await readJson(req), user);
-    db.feedbacks.unshift(feedback);
-    db.feedbacks = db.feedbacks.slice(0, 500);
-    audit(db, user, "create_feedback", feedback.id, feedback.body.slice(0, 80));
-    await writeDb(env, db);
+    await createFeedback(env, feedback);
+    await saveAudit(auditEntry(user, "create_feedback", feedback.id, feedback.body.slice(0, 80)));
     return json({ feedback }, 201);
   }
 
   if (pathname === "/api/feedback" && method === "GET") {
-    await requireAdmin(req, env, db);
-    return json({ feedbacks: ensureFeedbacks(db).slice(0, 300) });
+    adminOnly();
+    return json({ feedbacks: await listFeedbacks(env) });
   }
 
   if (pathname === "/api/materials/reorder" && method === "PUT") {
-    const admin = await requireAdmin(req, env, db);
+    const admin = adminOnly();
     const body = await readJson(req);
     const orderedIds = Array.isArray(body.ids) ? body.ids.map(String) : [];
-    const byId = new Map(db.materials.map((item) => [item.id, item]));
-    const ordered = orderedIds.map((id) => byId.get(id)).filter(Boolean);
-    const orderedSet = new Set(ordered.map((item) => item.id));
-    db.materials = [...ordered, ...db.materials.filter((item) => !orderedSet.has(item.id))];
-    audit(db, admin, "reorder_materials", "materials", "更新资料排序");
-    await writeDb(env, db);
-    return json({ materials: db.materials });
+    const materials = await reorderMaterials(env, orderedIds);
+    await saveAudit(auditEntry(admin, "reorder_materials", "materials", "更新资料排序"));
+    return json({ materials });
   }
 
   const materialMatch = pathname.match(/^\/api\/materials\/([^/]+)$/);
   if (materialMatch && method === "GET") {
-    const material = db.materials.find((item) => item.id === materialMatch[1]);
+    const material = await readMaterial(env, materialMatch[1]);
     if (!material || (user.role !== "admin" && material.status !== "published")) return json({ error: "资料不存在" }, 404);
     return json({ material });
   }
 
   if (pathname === "/api/materials" && method === "POST") {
-    const admin = await requireAdmin(req, env, db);
+    const admin = adminOnly();
     const material = normalizeMaterial(await readJson(req), { id: uid("mat"), createdAt: now() });
-    db.materials.unshift(material);
-    for (const tag of material.tags) if (!db.tags.includes(tag)) db.tags.push(tag);
-    if (!db.categories.includes(material.category)) db.categories.push(material.category);
-    audit(db, admin, "create_material", material.id, material.title);
-    await writeDb(env, db);
+    const taxonomy = await readTaxonomy(env);
+    for (const tag of material.tags) if (!taxonomy.tags.includes(tag)) taxonomy.tags.push(tag);
+    if (!taxonomy.categories.includes(material.category)) taxonomy.categories.push(material.category);
+    await Promise.all([writeMaterial(env, material, { prepend: true }), writeTaxonomy(env, taxonomy)]);
+    await saveAudit(auditEntry(admin, "create_material", material.id, material.title));
     return json({ material }, 201);
   }
 
   if (materialMatch && method === "PUT") {
-    const admin = await requireAdmin(req, env, db);
-    const index = db.materials.findIndex((item) => item.id === materialMatch[1]);
-    if (index === -1) return json({ error: "资料不存在" }, 404);
-    db.materials[index] = normalizeMaterial(await readJson(req), db.materials[index]);
-    for (const tag of db.materials[index].tags) if (!db.tags.includes(tag)) db.tags.push(tag);
-    if (!db.categories.includes(db.materials[index].category)) db.categories.push(db.materials[index].category);
-    audit(db, admin, "update_material", db.materials[index].id, db.materials[index].title);
-    await writeDb(env, db);
-    return json({ material: db.materials[index] });
+    const admin = adminOnly();
+    const existing = await readMaterial(env, materialMatch[1]);
+    if (!existing) return json({ error: "资料不存在" }, 404);
+    const material = normalizeMaterial(await readJson(req), existing);
+    const taxonomy = await readTaxonomy(env);
+    for (const tag of material.tags) if (!taxonomy.tags.includes(tag)) taxonomy.tags.push(tag);
+    if (!taxonomy.categories.includes(material.category)) taxonomy.categories.push(material.category);
+    await Promise.all([writeMaterial(env, material), writeTaxonomy(env, taxonomy)]);
+    await saveAudit(auditEntry(admin, "update_material", material.id, material.title));
+    return json({ material });
   }
 
   if (materialMatch && method === "DELETE") {
-    const admin = await requireAdmin(req, env, db);
-    const index = db.materials.findIndex((item) => item.id === materialMatch[1]);
-    if (index === -1) return json({ error: "资料不存在" }, 404);
-    const [removed] = db.materials.splice(index, 1);
-    audit(db, admin, "delete_material", removed.id, removed.title);
-    await writeDb(env, db);
+    const admin = adminOnly();
+    const removed = await deleteMaterial(env, materialMatch[1]);
+    if (!removed) return json({ error: "资料不存在" }, 404);
+    await saveAudit(auditEntry(admin, "delete_material", removed.id, removed.title));
     return json({ ok: true });
   }
 
   if (pathname === "/api/taxonomy" && method === "PUT") {
-    const admin = await requireAdmin(req, env, db);
+    const admin = adminOnly();
     const body = await readJson(req);
-    db.categories = Array.from(new Set((body.categories || []).map((item) => String(item).trim()).filter(Boolean)));
-    db.tags = Array.from(new Set((body.tags || []).map((item) => String(item).trim()).filter(Boolean)));
-    audit(db, admin, "update_taxonomy", "taxonomy", "更新分类和标签");
-    await writeDb(env, db);
-    return json({ categories: db.categories, tags: db.tags });
+    const taxonomy = {
+      categories: Array.from(new Set((body.categories || []).map((item) => String(item).trim()).filter(Boolean))),
+      tags: Array.from(new Set((body.tags || []).map((item) => String(item).trim()).filter(Boolean)))
+    };
+    await writeTaxonomy(env, taxonomy);
+    await saveAudit(auditEntry(admin, "update_taxonomy", "taxonomy", "更新分类和标签"));
+    return json(taxonomy);
   }
 
   if (pathname === "/api/users" && method === "GET") {
-    await requireAdmin(req, env, db);
-    return json({ users: db.users.map(publicUser) });
+    adminOnly();
+    return json({ users: (await listUsers(env)).map(publicUser) });
   }
 
   if (pathname === "/api/users" && method === "POST") {
-    const admin = await requireAdmin(req, env, db);
+    const admin = adminOnly();
     const body = await readJson(req);
     const username = String(body.username || "").trim();
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) throw new Error("账号需为 3-32 位字母、数字或符号 ._-");
-    if (db.users.some((item) => item.username === username)) throw new Error("账号已存在");
+    if (await getUserByUsername(env, username)) throw new Error("账号已存在");
     if (String(body.password || "").length < 6) throw new Error("密码至少 6 位");
     const created = {
       id: uid("user"),
@@ -622,16 +615,15 @@ async function route(req, env) {
       passwordHash: await hashPassword(String(body.password)),
       createdAt: now()
     };
-    db.users.push(created);
-    audit(db, admin, "create_user", created.id, created.username);
-    await writeDb(env, db);
+    await createUser(env, created);
+    await saveAudit(auditEntry(admin, "create_user", created.id, created.username));
     return json({ user: publicUser(created) }, 201);
   }
 
   const userMatch = pathname.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch && method === "PUT") {
-    const admin = await requireAdmin(req, env, db);
-    const target = db.users.find((item) => item.id === userMatch[1]);
+    const admin = adminOnly();
+    const target = await getUserById(env, userMatch[1]);
     if (!target) return json({ error: "账号不存在" }, 404);
     const body = await readJson(req);
     target.displayName = String(body.displayName || target.displayName).trim();
@@ -641,30 +633,29 @@ async function route(req, env) {
       if (String(body.password).length < 6) throw new Error("密码至少 6 位");
       target.passwordHash = await hashPassword(String(body.password));
     }
-    audit(db, admin, "update_user", target.id, target.username);
-    await writeDb(env, db);
+    await updateUser(env, target);
+    await saveAudit(auditEntry(admin, "update_user", target.id, target.username));
     return json({ user: publicUser(target) });
   }
 
   if (userMatch && method === "DELETE") {
-    const admin = await requireAdmin(req, env, db);
-    const index = db.users.findIndex((item) => item.id === userMatch[1]);
-    if (index === -1) return json({ error: "账号不存在" }, 404);
-    const target = db.users[index];
+    const admin = adminOnly();
+    const users = await listUsers(env);
+    const target = users.find((item) => item.id === userMatch[1]);
+    if (!target) return json({ error: "账号不存在" }, 404);
     if (target.id === admin.id) throw new Error("不能删除当前登录账号");
-    const activeAdmins = db.users.filter((item) => item.role === "admin" && item.active);
+    const activeAdmins = users.filter((item) => item.role === "admin" && item.active);
     if (target.role === "admin" && target.active && activeAdmins.length <= 1) {
       throw new Error("至少需要保留一个启用的管理员账号");
     }
-    db.users.splice(index, 1);
-    audit(db, admin, "delete_user", target.id, target.username);
-    await writeDb(env, db);
+    await deleteUser(env, target.id);
+    await saveAudit(auditEntry(admin, "delete_user", target.id, target.username));
     return json({ ok: true });
   }
 
   if (pathname === "/api/audit-logs" && method === "GET") {
-    await requireAdmin(req, env, db);
-    return json({ auditLogs: db.auditLogs.slice(0, 100) });
+    adminOnly();
+    return json({ auditLogs: await listAuditLogs(env, 100) });
   }
 
   return json({ error: "接口不存在" }, 404);
@@ -672,7 +663,7 @@ async function route(req, env) {
 
 export async function onRequest(context) {
   try {
-    return await route(context.request, context.env);
+    return await route(context.request, context.env, (promise) => context.waitUntil(promise));
   } catch (error) {
     return json({ error: error.message || "请求失败" }, error.status || 400);
   }

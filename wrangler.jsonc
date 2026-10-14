@@ -1,8 +1,9 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "training-library-mvp",
+  "name": "ceshi",
   "main": "worker.js",
-  "compatibility_date": "2026-06-12",
+  "compatibility_date": "2026-10-13",
+  "compatibility_flags": ["nodejs_compat"],
   "account_id": "f64e977b58f888aa46eb1ae5d4db7a9c",
   "assets": {
     "binding": "ASSETS",
@@ -13,6 +14,14 @@
     {
       "binding": "TRAINING_DB",
       "id": "8e4bccbc09a54479ba405e10d4ae8b70"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "APP_DB",
+      "database_name": "caz007-app",
+      "database_id": "3bb5b8d8-140a-43d1-81c6-62b8dc85daba",
+      "migrations_dir": "./migrations"
     }
   ],
   "vars": {

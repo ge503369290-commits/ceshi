@@ -1,4 +1,4 @@
-const MAX_IMPORT_ROWS = 10000;
+const MAX_IMPORT_ROWS = 900;
 const MAX_TOTAL_ROWS = 50000;
 
 export function emptyMerchantDb() {
