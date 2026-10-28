@@ -348,7 +348,7 @@ function validateUploads(payload) {
   }
   const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
   for (const block of blocks) {
-    if (block?.type === "image") {
+    if (block?.type === "image" || block?.type === "document") {
       for (const image of normalizeImageList(block)) {
         if (!String(image.dataUrl || "").startsWith("data:image/")) throw new Error("图片格式不支持");
         if (dataUrlBytes(image.dataUrl) > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 3MB");
@@ -365,6 +365,15 @@ function normalizeBlocks(payload) {
   if (!Array.isArray(payload.blocks)) return [];
   return payload.blocks
     .map((block) => {
+      if (block?.type === "document") {
+        const images = normalizeImageList(block);
+        return {
+          type: "document",
+          body: String(block.body || ""),
+          html: String(block.html || ""),
+          images
+        };
+      }
       if (block?.type === "image") {
         const richText = normalizeRichTextSegments(block.richText, block.body, block.textStyle);
         const images = normalizeImageList(block);
@@ -382,17 +391,16 @@ function normalizeBlocks(payload) {
       const richText = normalizeRichTextSegments(block?.richText, block?.body, block?.textStyle);
       return { type: "text", body: richText.map((segment) => segment.text).join(""), richText };
     })
-    .filter((block) => block.type !== "text" || block.body.trim() || block.type === "mindmap");
+    .filter((block) => !["text", "document"].includes(block.type) || block.body.trim() || block.images?.length);
 }
 
 function normalizeMaterial(payload, existing = {}) {
   validateUploads(payload);
   const blocks = normalizeBlocks(payload);
-  const images = Array.isArray(payload.images) && payload.images.length ? payload.images : blocks.flatMap((block) => (block.type === "image" ? normalizeImageList(block) : []));
+  const images = Array.isArray(payload.images) && payload.images.length ? payload.images : blocks.flatMap((block) => (["image", "document"].includes(block.type) ? normalizeImageList(block) : []));
   const title = String(payload.title || "").trim();
   if (!title) throw new Error("标题不能为空");
   const category = String(payload.category || "").trim();
-  if (!category) throw new Error("分类不能为空");
   const status = payload.status === "draft" ? "draft" : "published";
   const video = payload.video?.mode
     ? {
@@ -547,7 +555,7 @@ async function handleApi(req, res) {
       const material = normalizeMaterial(body, { id: uid("mat"), createdAt: now() });
       db.materials.unshift(material);
       for (const tag of material.tags) if (!db.tags.includes(tag)) db.tags.push(tag);
-      if (!db.categories.includes(material.category)) db.categories.push(material.category);
+      if (material.category && !db.categories.includes(material.category)) db.categories.push(material.category);
       audit(db, admin, "create_material", material.id, material.title);
       writeDb(db);
       return send(res, 201, { material });
@@ -561,7 +569,7 @@ async function handleApi(req, res) {
       const body = await readJson(req);
       db.materials[index] = normalizeMaterial(body, db.materials[index]);
       for (const tag of db.materials[index].tags) if (!db.tags.includes(tag)) db.tags.push(tag);
-      if (!db.categories.includes(db.materials[index].category)) db.categories.push(db.materials[index].category);
+      if (db.materials[index].category && !db.categories.includes(db.materials[index].category)) db.categories.push(db.materials[index].category);
       audit(db, admin, "update_material", db.materials[index].id, db.materials[index].title);
       writeDb(db);
       return send(res, 200, { material: db.materials[index] });

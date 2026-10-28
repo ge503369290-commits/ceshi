@@ -589,12 +589,27 @@ tr.drag-over {
   overflow: hidden;
 }
 
-.image-preview-stage img {
+.image-preview-canvas {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.image-preview-canvas img {
   max-width: 100%;
-  max-height: calc(100vh - 132px);
+  max-height: 100%;
   object-fit: contain;
   transform-origin: center center;
-  transition: transform 120ms ease;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.image-preview-canvas img.is-dragging {
+  cursor: grabbing;
 }
 
 .image-preview-stage figcaption {
@@ -1357,6 +1372,12 @@ body {
   font-size: 13px;
 }
 
+.topbar .userbar .btn.secondary {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+}
+
 .layout {
   grid-template-columns: 300px minmax(0, 1fr);
   min-height: calc(100vh - 96px);
@@ -1856,6 +1877,27 @@ textarea:focus {
   color: var(--body);
   font-size: 13px;
   text-transform: uppercase;
+}
+
+.material-category-heading th {
+  border-top: 12px solid #ffffff;
+  background: #eef3f8;
+  color: #20262e;
+  font-size: 15px;
+  text-align: left;
+  text-transform: none;
+}
+
+.material-category-heading span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#taxonomyForm textarea {
+  min-height: 52px;
+  overflow-y: hidden;
+  resize: none;
 }
 
 .builder-head,
@@ -2363,5 +2405,457 @@ textarea:focus {
 
   .detail-hero h1 {
     font-size: 30px;
+  }
+}
+
+/* Youdao-inspired document editor */
+.ynote-editor-shell {
+  min-height: calc(100vh - 174px);
+  margin: 0 -48px -64px;
+  background: #f3f4f6;
+}
+
+.ynote-editor-topbar {
+  position: sticky;
+  top: 132px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 62px;
+  padding: 10px 28px;
+  border-bottom: 1px solid #e6e8eb;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 2px 8px rgba(29, 35, 43, 0.04);
+  backdrop-filter: blur(12px);
+}
+
+.ynote-back {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: transparent;
+  color: #4d535c;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.ynote-back:hover,
+.ynote-tool:hover,
+.ynote-color-tool:hover {
+  background: #f0f1f3;
+}
+
+.ynote-document-state {
+  display: grid;
+  gap: 2px;
+}
+
+.ynote-document-state strong {
+  color: #262a30;
+  font-size: 15px;
+}
+
+.ynote-document-state span {
+  color: #92979f;
+  font-size: 12px;
+}
+
+.ynote-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ynote-publish {
+  min-width: 112px;
+  background: #1677ff;
+}
+
+.ynote-publish:hover {
+  background: #0968e5;
+}
+
+.ynote-editor-shell > [data-error] {
+  width: min(1040px, calc(100% - 48px));
+  margin: 18px auto 0;
+}
+
+.ynote-paper {
+  width: min(1040px, calc(100% - 48px));
+  min-height: 720px;
+  margin: 24px auto 56px;
+  border: 1px solid #e1e4e8;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 8px 30px rgba(29, 35, 43, 0.07);
+}
+
+.ynote-title {
+  display: block;
+  width: calc(100% - 80px);
+  margin: 0 40px;
+  padding: 32px 0 22px;
+  border: 0;
+  border-bottom: 1px solid #eceef1;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: #24272c;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.ynote-title::placeholder {
+  color: #bdc1c8;
+}
+
+.ynote-toolbar {
+  position: sticky;
+  top: 194px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 52px;
+  padding: 8px 32px;
+  overflow-x: auto;
+  border-bottom: 1px solid #eceef1;
+  background: rgba(255, 255, 255, 0.98);
+  white-space: nowrap;
+}
+
+.ynote-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ynote-tool,
+.ynote-color-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #444a53;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.ynote-tool.strong {
+  font-weight: 900;
+}
+
+.ynote-tool.italic {
+  font-family: Georgia, serif;
+  font-style: italic;
+}
+
+.ynote-tool.underline {
+  text-decoration: underline;
+}
+
+.ynote-tool.center {
+  text-align: center;
+}
+
+.ynote-tool.right {
+  text-align: right;
+}
+
+.ynote-tool.quote {
+  font-family: Georgia, serif;
+  font-size: 21px;
+}
+
+.ynote-tool.image {
+  color: #1677ff;
+  font-size: 21px;
+}
+
+.ynote-color-tool {
+  position: relative;
+  cursor: pointer;
+}
+
+.ynote-color-tool span {
+  border-bottom: 3px solid #222222;
+  font-weight: 700;
+}
+
+.ynote-color-tool input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ynote-tool-select {
+  flex-shrink: 0;
+  width: 92px;
+  height: 34px;
+  padding: 0 24px 0 8px;
+  border: 0;
+  border-radius: 5px;
+  outline: 0;
+  background-color: transparent;
+  color: #444a53;
+  font-size: 13px;
+}
+
+.ynote-tool-select:hover,
+.ynote-tool-select:focus {
+  background-color: #f0f1f3;
+}
+
+.ynote-tool-select.font {
+  width: 92px;
+}
+
+.ynote-tool-select.heading {
+  width: 88px;
+}
+
+.ynote-tool-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: #e2e4e8;
+}
+
+.ynote-drop-zone {
+  position: relative;
+  min-height: 560px;
+}
+
+.ynote-editor {
+  min-height: 560px;
+  padding: 34px 56px 80px;
+  color: #2c3036;
+  font-size: 16px;
+  line-height: 1.9;
+  outline: 0;
+  word-break: break-word;
+}
+
+.ynote-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #b7bbc2;
+  pointer-events: none;
+}
+
+.ynote-editor p {
+  min-height: 1.9em;
+  margin: 0 0 8px;
+}
+
+.ynote-editor h1,
+.ynote-editor h2,
+.ynote-editor h3,
+.note-document-view h1,
+.note-document-view h2,
+.note-document-view h3 {
+  color: #20242a;
+  line-height: 1.45;
+}
+
+.ynote-editor blockquote,
+.note-document-view blockquote {
+  margin: 16px 0;
+  padding: 8px 18px;
+  border-left: 4px solid #80b7ff;
+  background: #f5f8fc;
+  color: #616873;
+}
+
+.ynote-editor a,
+.note-document-view a {
+  color: #1677ff;
+  text-decoration: underline;
+}
+
+.ynote-editor img,
+.note-document-view img {
+  display: block;
+  max-width: min(100%, 780px);
+  max-height: 620px;
+  margin: 18px auto;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.note-document-view img[data-preview-index] {
+  cursor: zoom-in;
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+
+.note-document-view img[data-preview-index]:hover,
+.note-document-view img[data-preview-index]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.ynote-editor img.selected {
+  outline: 3px solid rgba(22, 119, 255, 0.42);
+  outline-offset: 3px;
+}
+
+.ynote-drop-hint {
+  position: absolute;
+  inset: 18px;
+  display: none;
+  place-items: center;
+  border: 2px dashed #4b9cff;
+  border-radius: 8px;
+  background: rgba(235, 245, 255, 0.94);
+  color: #1677ff;
+  font-size: 18px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.ynote-drop-zone.drag-active .ynote-drop-hint {
+  display: grid;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.material-tags-cell {
+  min-width: 260px;
+}
+
+.tag-chip-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #2968ad;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tag-chip.removable {
+  border: 0;
+  cursor: pointer;
+}
+
+.tag-chip.removable:hover {
+  background: #dceaff;
+}
+
+.tag-edit-link {
+  margin-top: 7px;
+  padding: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tag-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fafafa;
+}
+
+.tag-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.tag-editor-row input {
+  min-width: 180px;
+  flex: 1;
+}
+
+.note-document-view {
+  line-height: 1.85;
+}
+
+@media (max-width: 1040px) {
+  .ynote-editor-shell {
+    margin-right: -24px;
+    margin-left: -24px;
+  }
+
+  .ynote-editor-topbar {
+    top: 132px;
+  }
+
+  .ynote-toolbar {
+    top: 194px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ynote-editor-shell {
+    margin-right: -18px;
+    margin-left: -18px;
+  }
+
+  .ynote-editor-topbar {
+    position: static;
+    grid-template-columns: auto 1fr;
+    padding: 10px 14px;
+  }
+
+  .ynote-editor-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .ynote-paper {
+    width: calc(100% - 24px);
+    margin-top: 12px;
+  }
+
+  .ynote-title {
+    width: calc(100% - 40px);
+    margin: 0 20px;
+    padding-top: 24px;
+    font-size: 25px;
+  }
+
+  .ynote-toolbar {
+    top: 0;
+    padding: 8px 14px;
+  }
+
+  .ynote-editor {
+    padding: 26px 24px 60px;
   }
 }

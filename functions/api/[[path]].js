@@ -341,13 +341,13 @@ function validateUploads(payload) {
   }
   const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
   for (const block of blocks) {
-    if (block?.type === "image" && Array.isArray(block.images)) {
+    if ((block?.type === "image" || block?.type === "document") && Array.isArray(block.images)) {
       for (const image of normalizeImageList(block)) {
         if (!String(image.dataUrl || "").startsWith("data:image/")) throw new Error("Image format is not supported");
         if (dataUrlBytes(image.dataUrl) > MAX_IMAGE_BYTES) throw new Error("Each image must be 3MB or smaller");
       }
     }
-    if (block?.type === "image" && block.image?.dataUrl) {
+    if ((block?.type === "image" || block?.type === "document") && block.image?.dataUrl) {
       if (!String(block.image.dataUrl || "").startsWith("data:image/")) throw new Error("图片格式不支持");
       if (dataUrlBytes(block.image.dataUrl) > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 3MB");
     }
@@ -362,6 +362,15 @@ function normalizeBlocks(payload) {
   if (!Array.isArray(payload.blocks)) return [];
   return payload.blocks
     .map((block) => {
+      if (block?.type === "document") {
+        const images = normalizeImageList(block);
+        return {
+          type: "document",
+          body: String(block.body || ""),
+          html: String(block.html || ""),
+          images
+        };
+      }
       if (block?.type === "image") {
         const richText = normalizeRichTextSegments(block.richText, block.body, block.textStyle);
         const images = normalizeImageList(block);
@@ -379,17 +388,16 @@ function normalizeBlocks(payload) {
       const richText = normalizeRichTextSegments(block?.richText, block?.body, block?.textStyle);
       return { type: "text", body: richText.map((segment) => segment.text).join(""), richText };
     })
-    .filter((block) => block.type !== "text" || block.body.trim() || block.type === "mindmap");
+    .filter((block) => !["text", "document"].includes(block.type) || block.body.trim() || block.images?.length);
 }
 
 function normalizeMaterial(payload, existing = {}) {
   validateUploads(payload);
   const blocks = normalizeBlocks(payload);
-  const images = Array.isArray(payload.images) && payload.images.length ? payload.images : blocks.flatMap((block) => (block.type === "image" ? normalizeImageList(block) : []));
+  const images = Array.isArray(payload.images) && payload.images.length ? payload.images : blocks.flatMap((block) => (["image", "document"].includes(block.type) ? normalizeImageList(block) : []));
   const title = String(payload.title || "").trim();
   if (!title) throw new Error("标题不能为空");
   const category = String(payload.category || "").trim();
-  if (!category) throw new Error("分类不能为空");
   const video = payload.video?.mode
     ? {
         mode: payload.video.mode === "upload" ? "upload" : "external",
@@ -555,7 +563,7 @@ async function route(req, env, waitUntil) {
     const material = normalizeMaterial(await readJson(req), { id: uid("mat"), createdAt: now() });
     const taxonomy = await readTaxonomy(env);
     for (const tag of material.tags) if (!taxonomy.tags.includes(tag)) taxonomy.tags.push(tag);
-    if (!taxonomy.categories.includes(material.category)) taxonomy.categories.push(material.category);
+    if (material.category && !taxonomy.categories.includes(material.category)) taxonomy.categories.push(material.category);
     await Promise.all([writeMaterial(env, material, { prepend: true }), writeTaxonomy(env, taxonomy)]);
     await saveAudit(auditEntry(admin, "create_material", material.id, material.title));
     return json({ material }, 201);
@@ -568,7 +576,7 @@ async function route(req, env, waitUntil) {
     const material = normalizeMaterial(await readJson(req), existing);
     const taxonomy = await readTaxonomy(env);
     for (const tag of material.tags) if (!taxonomy.tags.includes(tag)) taxonomy.tags.push(tag);
-    if (!taxonomy.categories.includes(material.category)) taxonomy.categories.push(material.category);
+    if (material.category && !taxonomy.categories.includes(material.category)) taxonomy.categories.push(material.category);
     await Promise.all([writeMaterial(env, material), writeTaxonomy(env, taxonomy)]);
     await saveAudit(auditEntry(admin, "update_material", material.id, material.title));
     return json({ material });

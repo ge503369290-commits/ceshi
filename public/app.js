@@ -30,8 +30,14 @@ const state = {
   imagePreview: {
     images: [],
     index: 0,
-    zoom: 1
-  }
+    zoom: 1,
+    panX: 0,
+    panY: 0
+  },
+  noteEditorHtml: "",
+  editorSelectionRange: null,
+  tagEditorId: "",
+  tagDraft: []
 };
 
 const app = document.querySelector("#app");
@@ -239,6 +245,15 @@ function normalizeBlockImages(block = {}) {
 }
 
 function createContentBlock(type, data = {}) {
+  if (type === "document") {
+    return {
+      id: clientId("block"),
+      type: "document",
+      body: String(data.body || ""),
+      html: String(data.html || ""),
+      images: normalizeBlockImages(data).slice(0, 9)
+    };
+  }
   if (type === "image") {
     const images = normalizeBlockImages(data).slice(0, 9);
     return {
@@ -265,6 +280,7 @@ function normalizeContentBlocks(material = {}) {
   if (Array.isArray(material.blocks) && material.blocks.length) {
     return material.blocks
       .map((block) => {
+        if (block.type === "document") return createContentBlock("document", block);
         if (block.type === "image") return createContentBlock("image", { body: block.body || "", image: block.image || null, images: block.images, richText: block.richText, textStyle: block.textStyle });
         if (block.type === "mindmap") return createContentBlock("mindmap");
         return createContentBlock("text", { body: block.body || "", richText: block.richText, textStyle: block.textStyle });
@@ -285,6 +301,8 @@ function resetMaterialDraft(material = null) {
   state.formImages = material?.images || [];
   state.formVideo = material?.video || null;
   state.contentBlocks = normalizeContentBlocks(material || {});
+  state.noteEditorHtml = materialToEditorHtml(material || {});
+  state.editorSelectionRange = null;
   state.mindmap = normalizeDiagram(material?.mindmap);
   state.diagramSelected = "root";
   state.diagramChecked = new Set();
@@ -329,6 +347,8 @@ function resetEmptyMaterialDraft() {
   });
   state.editing = null;
   state.formDraft = null;
+  state.noteEditorHtml = "";
+  state.editorSelectionRange = null;
 }
 
 function rememberMaterialForm() {
@@ -336,10 +356,7 @@ function rememberMaterialForm() {
   if (!form) return;
   const data = new FormData(form);
   state.formDraft = {
-    title: String(data.get("title") || ""),
-    category: String(data.get("category") || ""),
-    tags: String(data.get("tags") || ""),
-    status: String(data.get("status") || "published")
+    title: String(data.get("title") || "")
   };
 }
 
@@ -913,6 +930,122 @@ function applyRichTextStyle(index, patch = {}) {
   syncRichTextBlock(state.contentBlocks[index], editor);
 }
 
+function sanitizeEditorHtml(value = "") {
+  const template = document.createElement("template");
+  template.innerHTML = String(value || "");
+  const allowedTags = new Set(["P", "DIV", "BR", "SPAN", "STRONG", "B", "EM", "I", "U", "H1", "H2", "H3", "UL", "OL", "LI", "BLOCKQUOTE", "A", "IMG", "FONT"]);
+  const allowedStyles = new Set(["color", "font-family", "font-size", "text-align"]);
+  const cleanNode = (node) => {
+    [...node.childNodes].forEach((child) => {
+      if (child.nodeType === Node.COMMENT_NODE) {
+        child.remove();
+        return;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) return;
+      if (!allowedTags.has(child.tagName)) {
+        cleanNode(child);
+        child.replaceWith(...child.childNodes);
+        return;
+      }
+      const originalStyle = child.getAttribute("style") || "";
+      const href = child.tagName === "A" ? String(child.getAttribute("href") || "") : "";
+      const source = child.tagName === "IMG" ? String(child.getAttribute("src") || "") : "";
+      const imageName = child.tagName === "IMG" ? String(child.getAttribute("alt") || "笔记图片") : "";
+      const font = child.tagName === "FONT" ? { color: child.color, face: child.face, size: child.size } : null;
+      [...child.attributes].forEach((attribute) => child.removeAttribute(attribute.name));
+      if (child.tagName === "A" && /^https?:\/\//i.test(href)) {
+        child.setAttribute("href", href);
+        child.setAttribute("target", "_blank");
+        child.setAttribute("rel", "noreferrer");
+      }
+      if (child.tagName === "IMG") {
+        if (!source.startsWith("data:image/")) {
+          child.remove();
+          return;
+        }
+        child.setAttribute("src", source);
+        child.setAttribute("alt", imageName);
+        child.setAttribute("data-note-image", "true");
+      }
+      if (font) {
+        if (font.color) child.setAttribute("color", font.color);
+        if (font.face) child.setAttribute("face", font.face);
+        if (font.size) child.setAttribute("size", font.size);
+      }
+      if (originalStyle) {
+        const probe = document.createElement("span");
+        probe.setAttribute("style", originalStyle);
+        [...probe.style].forEach((property) => {
+          if (allowedStyles.has(property)) child.style.setProperty(property, probe.style.getPropertyValue(property));
+        });
+      }
+      cleanNode(child);
+    });
+  };
+  cleanNode(template.content);
+  return template.innerHTML;
+}
+
+function materialToEditorHtml(material = {}) {
+  const blocks = Array.isArray(material.blocks) ? material.blocks : [];
+  const documentBlock = blocks.find((block) => block?.type === "document");
+  if (documentBlock?.html) return sanitizeEditorHtml(documentBlock.html);
+  if (!blocks.length && material.body) return `<p>${escapeHtml(material.body).replaceAll("\n", "<br>")}</p>`;
+  return blocks
+    .filter((block) => block?.type !== "mindmap")
+    .map((block) => {
+      const text = renderRichTextSegments(block.richText, block.body, block.textStyle);
+      const paragraphs = text ? `<p>${text}</p>` : "";
+      if (block.type !== "image") return paragraphs;
+      const images = normalizeBlockImages(block).map((image) => `<p class="ynote-image-line"><img src="${image.dataUrl}" alt="${escapeHtml(image.name || "笔记图片")}" data-note-image="true"></p>`).join("");
+      return `${paragraphs}${images}`;
+    })
+    .join("");
+}
+
+function noteEditorPlainText(editor) {
+  return String(editor?.innerText || "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function noteEditorImages(editor) {
+  return [...(editor?.querySelectorAll("img") || [])]
+    .map((image) => ({ name: image.alt || "笔记图片", dataUrl: image.getAttribute("src") || "" }))
+    .filter((image) => image.dataUrl.startsWith("data:image/"))
+    .slice(0, 9);
+}
+
+function saveEditorSelection(editor) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  if (editor.contains(range.commonAncestorContainer)) state.editorSelectionRange = range.cloneRange();
+}
+
+function restoreEditorSelection(editor) {
+  editor.focus();
+  if (!state.editorSelectionRange || !editor.contains(state.editorSelectionRange.commonAncestorContainer)) return;
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(state.editorSelectionRange);
+}
+
+function syncNoteEditor(editor) {
+  state.noteEditorHtml = sanitizeEditorHtml(editor.innerHTML);
+}
+
+async function insertNoteImages(files, editor) {
+  const imageFiles = Array.from(files || []).filter((file) => file.type?.startsWith("image/"));
+  if (!imageFiles.length) return;
+  const currentCount = noteEditorImages(editor).length;
+  if (currentCount + imageFiles.length > 9) throw new Error("一篇笔记最多插入 9 张图片");
+  restoreEditorSelection(editor);
+  for (const file of imageFiles) {
+    const image = await compressMaterialImage(file);
+    document.execCommand("insertHTML", false, `<p class="ynote-image-line"><img src="${image.dataUrl}" alt="${escapeHtml(image.name || "笔记图片")}" data-note-image="true"></p><p><br></p>`);
+  }
+  syncNoteEditor(editor);
+}
+
 async function loadBootstrap() {
   const data = await api(`/api/bootstrap?${new URLSearchParams(state.filters)}`);
   state.user = data.user;
@@ -986,6 +1119,10 @@ function renderLogin() {
   `;
   document.querySelector("#loginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "登录中…";
     setError("");
     const form = new FormData(event.currentTarget);
     try {
@@ -997,6 +1134,8 @@ function renderLogin() {
       renderShell();
     } catch (error) {
       setError(error.message);
+      button.disabled = false;
+      button.textContent = "登录";
     }
   });
 }
@@ -1014,12 +1153,6 @@ function renderShell() {
         <div class="brand">
           <span class="brand-mark">TL</span>
           <strong>内部培训知识库</strong>
-        </div>
-        <div class="navlinks">
-          <span>资料</span>
-          <span>方案</span>
-          <span>团队</span>
-          <span>支持</span>
         </div>
         <div class="userbar">
           <span>${escapeHtml(state.user.displayName)} / ${escapeHtml(state.user.username)}</span>
@@ -1404,6 +1537,7 @@ function getLibraryCategorySections() {
       ).filter(Boolean)
     )
   ];
+  if (!state.filters.category && state.materials.some((item) => !item.category)) categories.push("");
 
   return categories.map((category) => ({
     category,
@@ -1416,7 +1550,7 @@ function renderMaterialCard(item) {
     <article class="card">
       <span class="corner-square"></span>
       <div class="meta">
-        <span class="chip">${escapeHtml(item.category)}</span>
+        <span class="chip">${escapeHtml(item.category || "未分类")}</span>
         <span class="chip">${typeText(item.type)}</span>
         ${item.status === "draft" ? '<span class="chip status-draft">草稿</span>' : ""}
       </div>
@@ -1441,7 +1575,7 @@ function renderLibraryCategorySection(section) {
       <header class="category-section-head">
         <div>
           <span class="eyebrow">CATEGORY</span>
-          <h3>${escapeHtml(section.category)}</h3>
+          <h3>${escapeHtml(section.category || "未分类")}</h3>
         </div>
         <span class="category-count">${section.materials.length} 项内容</span>
       </header>
@@ -1481,7 +1615,6 @@ function renderLibrary(target) {
         <span class="eyebrow">LATEST RESOURCES</span>
         <h2>培训资料</h2>
       </div>
-      <p>按分类和标签快速定位内容，管理员可直接编辑、删除或发布新资料。</p>
     </section>
     <div class="category-sections">
       ${categorySections.length ? categorySections.map((section) => renderLibraryCategorySection(section)).join("") : ""}
@@ -1564,11 +1697,13 @@ function renderDetail(target) {
 
 function renderImagePreviewOverlay() {
   return `
-    <div class="image-preview-overlay" data-image-preview hidden>
+    <div class="image-preview-overlay" data-image-preview role="dialog" aria-modal="true" aria-label="图片预览" hidden>
       <button class="image-preview-close" type="button" data-preview-close aria-label="关闭预览">×</button>
       <button class="image-preview-nav prev" type="button" data-preview-step="-1" aria-label="上一张图片">‹</button>
       <figure class="image-preview-stage">
-        <img data-preview-image alt="" />
+        <div class="image-preview-canvas" data-preview-canvas>
+          <img data-preview-image alt="" draggable="false" />
+        </div>
         <figcaption>
           <span data-preview-name></span>
           <span data-preview-count></span>
@@ -1584,7 +1719,9 @@ function openImagePreview(images, index = 0) {
   state.imagePreview = {
     images: images.filter((image) => image?.dataUrl),
     index,
-    zoom: 1
+    zoom: 1,
+    panX: 0,
+    panY: 0
   };
   updateImagePreviewOverlay();
 }
@@ -1593,6 +1730,8 @@ function closeImagePreview() {
   state.imagePreview.images = [];
   state.imagePreview.index = 0;
   state.imagePreview.zoom = 1;
+  state.imagePreview.panX = 0;
+  state.imagePreview.panY = 0;
   updateImagePreviewOverlay();
 }
 
@@ -1601,28 +1740,55 @@ function stepImagePreview(direction) {
   if (!total) return;
   state.imagePreview.index = (state.imagePreview.index + direction + total) % total;
   state.imagePreview.zoom = 1;
+  state.imagePreview.panX = 0;
+  state.imagePreview.panY = 0;
   updateImagePreviewOverlay();
 }
 
-function zoomImagePreview(delta) {
+function clampImagePreviewPan() {
+  const canvas = document.querySelector("[data-preview-canvas]");
+  const img = document.querySelector("[data-preview-image]");
+  if (!canvas || !img || !img.offsetWidth || !img.offsetHeight) return;
+  const { zoom } = state.imagePreview;
+  const width = img.offsetWidth * zoom;
+  const height = img.offsetHeight * zoom;
+  const limitX = Math.abs(width - canvas.clientWidth) / 2;
+  const limitY = Math.abs(height - canvas.clientHeight) / 2;
+  state.imagePreview.panX = Math.max(-limitX, Math.min(limitX, state.imagePreview.panX));
+  state.imagePreview.panY = Math.max(-limitY, Math.min(limitY, state.imagePreview.panY));
+}
+
+function zoomImagePreview(delta, anchor) {
   if (!state.imagePreview.images.length) return;
-  const next = Math.max(0.5, Math.min(4, state.imagePreview.zoom + delta));
-  state.imagePreview.zoom = Math.round(next * 10) / 10;
+  const current = state.imagePreview.zoom;
+  const next = Math.round(Math.max(0.5, Math.min(4, current + delta)) * 10) / 10;
+  if (next === current) return;
+  const canvas = document.querySelector("[data-preview-canvas]");
+  if (canvas && anchor) {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = next / current;
+    const x = anchor.x - (rect.left + rect.width / 2);
+    const y = anchor.y - (rect.top + rect.height / 2);
+    state.imagePreview.panX = x - (x - state.imagePreview.panX) * ratio;
+    state.imagePreview.panY = y - (y - state.imagePreview.panY) * ratio;
+  }
+  state.imagePreview.zoom = next;
+  clampImagePreviewPan();
   updateImagePreviewOverlay();
 }
 
 function updateImagePreviewOverlay() {
   const overlay = document.querySelector("[data-image-preview]");
   if (!overlay) return;
-  const { images, index, zoom } = state.imagePreview;
+  const { images, index, zoom, panX, panY } = state.imagePreview;
   const image = images[index];
   overlay.hidden = !image;
   document.body.classList.toggle("preview-open", Boolean(image));
   if (!image) return;
   const img = overlay.querySelector("[data-preview-image]");
-  img.src = image.dataUrl;
+  if (img.getAttribute("src") !== image.dataUrl) img.src = image.dataUrl;
   img.alt = image.name || "图片预览";
-  img.style.transform = `scale(${zoom})`;
+  img.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
   overlay.querySelector("[data-preview-name]").textContent = image.name || "图片预览";
   overlay.querySelector("[data-preview-count]").textContent = `${index + 1} / ${images.length}`;
   overlay.querySelector("[data-preview-zoom]").textContent = `${Math.round(zoom * 100)}%`;
@@ -1633,24 +1799,66 @@ function updateImagePreviewOverlay() {
 
 function handleImagePreviewKeydown(event) {
   if (!state.imagePreview.images.length) return;
+  if (["Escape", "ArrowLeft", "ArrowRight"].includes(event.key)) event.preventDefault();
   if (event.key === "Escape") closeImagePreview();
   if (event.key === "ArrowLeft") stepImagePreview(-1);
   if (event.key === "ArrowRight") stepImagePreview(1);
 }
 
 function bindImagePreview(images) {
-  document.querySelectorAll("[data-preview-index]").forEach((button) => {
-    button.addEventListener("click", () => openImagePreview(images, Number(button.dataset.previewIndex)));
+  document.querySelectorAll("[data-preview-index]").forEach((trigger) => {
+    const open = () => openImagePreview(images, Number(trigger.dataset.previewIndex));
+    trigger.addEventListener("click", open);
+    trigger.addEventListener("keydown", (event) => {
+      if (!["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      open();
+    });
   });
   document.querySelector("[data-preview-close]")?.addEventListener("click", closeImagePreview);
   document.querySelector("[data-image-preview]")?.addEventListener("click", (event) => {
     if (event.target.matches("[data-image-preview]")) closeImagePreview();
   });
-  document.querySelector("[data-image-preview]")?.addEventListener(
+  const previewImage = document.querySelector("[data-preview-image]");
+  let drag = null;
+  previewImage?.addEventListener("load", () => {
+    clampImagePreviewPan();
+    updateImagePreviewOverlay();
+  });
+  previewImage?.addEventListener("dragstart", (event) => event.preventDefault());
+  previewImage?.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    drag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      panX: state.imagePreview.panX,
+      panY: state.imagePreview.panY
+    };
+    previewImage.setPointerCapture(event.pointerId);
+    previewImage.classList.add("is-dragging");
+  });
+  previewImage?.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    state.imagePreview.panX = drag.panX + event.clientX - drag.x;
+    state.imagePreview.panY = drag.panY + event.clientY - drag.y;
+    clampImagePreviewPan();
+    updateImagePreviewOverlay();
+  });
+  const stopImageDrag = (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (previewImage.hasPointerCapture(event.pointerId)) previewImage.releasePointerCapture(event.pointerId);
+    previewImage.classList.remove("is-dragging");
+    drag = null;
+  };
+  previewImage?.addEventListener("pointerup", stopImageDrag);
+  previewImage?.addEventListener("pointercancel", stopImageDrag);
+  document.querySelector("[data-preview-canvas]")?.addEventListener(
     "wheel",
     (event) => {
       event.preventDefault();
-      zoomImagePreview(event.deltaY < 0 ? 0.2 : -0.2);
+      zoomImagePreview(event.deltaY < 0 ? 0.2 : -0.2, { x: event.clientX, y: event.clientY });
     },
     { passive: false }
   );
@@ -1772,7 +1980,36 @@ function renderImages(images = []) {
 }
 
 function collectContentImages(blocks = []) {
-  return blocks.flatMap((block) => (block.type === "image" ? normalizeBlockImages(block) : [])).filter((image) => image?.dataUrl);
+  return blocks
+    .flatMap((block) => {
+      if (block.type === "document") return collectDocumentImages(block);
+      if (block.type === "image") return normalizeBlockImages(block);
+      return [];
+    })
+    .filter((image) => image?.dataUrl);
+}
+
+function collectDocumentImages(block = {}) {
+  const template = document.createElement("template");
+  template.innerHTML = sanitizeEditorHtml(block.html || "");
+  const storedImages = normalizeBlockImages(block);
+  return [...template.content.querySelectorAll("img")].map((image, index) => ({
+    dataUrl: image.getAttribute("src") || "",
+    name: image.getAttribute("alt") || storedImages[index]?.name || `笔记图片 ${index + 1}`
+  }));
+}
+
+function renderDocumentHtmlWithPreview(block = {}, startIndex = 0) {
+  const template = document.createElement("template");
+  template.innerHTML = sanitizeEditorHtml(block.html || "");
+  template.content.querySelectorAll("img").forEach((image, index) => {
+    const name = image.getAttribute("alt") || `笔记图片 ${index + 1}`;
+    image.setAttribute("data-preview-index", String(startIndex + index));
+    image.setAttribute("role", "button");
+    image.setAttribute("tabindex", "0");
+    image.setAttribute("aria-label", `预览图片：${name}`);
+  });
+  return template.innerHTML;
 }
 
 function renderContentImageGrid(images = [], startIndex = 0) {
@@ -1797,6 +2034,12 @@ function renderContentBlocks(blocks = [], material = {}) {
   let previewIndex = 0;
   return blocks
     .map((block) => {
+      if (block.type === "document") {
+        const documentImages = collectDocumentImages(block);
+        const html = renderDocumentHtmlWithPreview(block, previewIndex);
+        previewIndex += documentImages.length;
+        return `<div class="body-text note-document-view">${html}</div>`;
+      }
       if (block.type === "image") {
         const images = normalizeBlockImages(block);
         const caption = renderRichTextSegments(block.richText, block.body, block.textStyle);
@@ -2070,6 +2313,8 @@ function renderDiagram(diagram, options = {}) {
 }
 
 function renderAdmin(target) {
+  const categoryNames = [...new Set([...state.categories, ...state.materials.map((item) => item.category?.trim() || "未分类")])]
+    .filter((category) => state.materials.some((item) => (item.category?.trim() || "未分类") === category));
   target.innerHTML = `
     <div class="admin-dashboard">
       <section class="panel dashboard-head">
@@ -2091,21 +2336,42 @@ function renderAdmin(target) {
         <section class="panel">
           <h2>资料列表</h2>
           <table class="table">
-            <thead><tr><th>排序</th><th>标题</th><th>状态</th><th>操作</th></tr></thead>
-            <tbody>
-              ${state.materials
+            <thead><tr><th>排序</th><th>标题</th><th>标签</th><th>状态</th><th>操作</th></tr></thead>
+            ${categoryNames.map((category) => `
+              <tbody>
+                <tr class="material-category-heading"><th colspan="5" scope="rowgroup">${escapeHtml(category)} <span>${state.materials.filter((item) => (item.category?.trim() || "未分类") === category).length} 项</span></th></tr>
+              ${state.materials.filter((item) => (item.category?.trim() || "未分类") === category)
                 .map(
                   (item) => `
-                    <tr draggable="true" data-material-row="${item.id}">
+                    <tr draggable="${state.tagEditorId === item.id ? "false" : "true"}" data-material-row="${item.id}" data-material-category="${escapeHtml(category)}">
                       <td><span class="drag-handle" title="拖动排序">↕</span></td>
                       <td>${escapeHtml(item.title)}</td>
+                      <td class="material-tags-cell">
+                        <div class="tag-chip-list">
+                          ${(item.tags || []).length ? (item.tags || []).map((tag) => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join("") : '<span class="muted">未设置</span>'}
+                        </div>
+                        ${state.tagEditorId === item.id ? `
+                          <div class="tag-editor" data-tag-editor="${item.id}">
+                            <div class="tag-chip-list editable">
+                              ${state.tagDraft.map((tag, index) => `<button type="button" class="tag-chip removable" data-remove-tag="${index}" title="删除标签">${escapeHtml(tag)} ×</button>`).join("")}
+                            </div>
+                            <div class="tag-editor-row">
+                              <input type="text" data-tag-input="${item.id}" placeholder="输入标签，按回车添加" />
+                              <button class="btn secondary" type="button" data-add-tag="${item.id}">添加</button>
+                              <button class="btn" type="button" data-save-tags="${item.id}">保存标签</button>
+                              <button class="btn secondary" type="button" data-cancel-tags>取消</button>
+                            </div>
+                          </div>
+                        ` : `<button class="tag-edit-link" type="button" data-edit-tags="${item.id}">编辑标签</button>`}
+                      </td>
                       <td>${item.status === "draft" ? "草稿" : "发布"}</td>
                       <td><button class="btn secondary" data-edit="${item.id}">编辑</button></td>
                     </tr>
                   `
                 )
                 .join("")}
-            </tbody>
+              </tbody>
+            `).join("")}
           </table>
         </section>
       </div>
@@ -2118,31 +2384,74 @@ function renderAdmin(target) {
 function renderMaterialEditor(target) {
   const material = state.editing || {};
   const draft = state.formDraft || {};
-  if (state.editing && !state.contentBlocks.length) state.contentBlocks = normalizeContentBlocks(material);
   target.innerHTML = `
-    <form class="panel material-editor-page" id="materialForm">
-      <div class="editor-page-head">
-        <div>
-          <h2>${state.editing ? "编辑资料" : "新增资料"}</h2>
-          <p class="muted">当前页面专用于内容编辑，导图画布会占用完整宽度。</p>
+    <form class="material-editor-page ynote-editor-shell" id="materialForm">
+      <div class="ynote-editor-topbar">
+        <button class="ynote-back" type="button" data-action="backAdmin" aria-label="返回后台">‹</button>
+        <div class="ynote-document-state">
+          <strong>${state.editing ? "编辑笔记" : "新建笔记"}</strong>
+          <span>保存后立即发布到资料库</span>
         </div>
-        <button class="btn secondary" type="button" data-action="backAdmin">返回后台</button>
-      </div>
-        <div data-error></div>
-        <label class="field"><span>标题</span><input name="title" value="${escapeHtml(draft.title ?? material.title ?? "")}" required /></label>
-        <label class="field"><span>分类</span><input name="category" list="categoryList" value="${escapeHtml(draft.category ?? material.category ?? state.categories[0] ?? "")}" required /></label>
-        <datalist id="categoryList">${state.categories.map((item) => `<option>${escapeHtml(item)}</option>`).join("")}</datalist>
-        <label class="field"><span>标签，用逗号分隔</span><input name="tags" value="${escapeHtml(draft.tags ?? (material.tags || []).join(", "))}" /></label>
-        <label class="field"><span>状态</span><select name="status"><option value="published" ${(draft.status ?? material.status) !== "draft" ? "selected" : ""}>发布</option><option value="draft" ${(draft.status ?? material.status) === "draft" ? "selected" : ""}>草稿</option></select></label>
-        ${renderContentBlockEditor()}
-        <div class="row">
-          <button class="btn" type="submit">${state.editing ? "保存修改" : "发布资料"}</button>
+        <div class="ynote-editor-actions">
           <button class="btn secondary" type="button" data-action="newMaterial">新建空白</button>
+          <button class="btn ynote-publish" type="submit">保存并发布</button>
         </div>
+      </div>
+      <div data-error></div>
+      <div class="ynote-paper">
+        <input class="ynote-title" name="title" value="${escapeHtml(draft.title ?? material.title ?? "")}" placeholder="请输入标题" autocomplete="off" required />
+        ${renderYnoteToolbar()}
+        <div class="ynote-drop-zone">
+          <div class="ynote-editor" contenteditable="true" role="textbox" aria-multiline="true" data-note-editor data-placeholder="开始记录你的想法…">${sanitizeEditorHtml(state.noteEditorHtml)}</div>
+          <div class="ynote-drop-hint">松开鼠标，将图片插入笔记</div>
+        </div>
+        <input class="visually-hidden" type="file" accept="image/*" multiple data-note-image-input />
+      </div>
     </form>
   `;
-  if (state.contentBlocks.some((block) => block.type === "mindmap")) renderMindEditor();
-  bindMaterialEditor();
+  bindYnoteMaterialEditor();
+}
+
+function renderYnoteToolbar() {
+  return `
+    <div class="ynote-toolbar" role="toolbar" aria-label="笔记格式工具栏">
+      <div class="ynote-tool-group">
+        <button type="button" class="ynote-tool" data-editor-command="undo" title="撤销 Ctrl+Z">↶</button>
+        <button type="button" class="ynote-tool" data-editor-command="redo" title="重做 Ctrl+Y">↷</button>
+      </div>
+      <span class="ynote-tool-divider"></span>
+      <select class="ynote-tool-select font" data-editor-font title="字体">
+        <option value="">字体</option><option value="Arial">Arial</option><option value="Microsoft YaHei">微软雅黑</option><option value="SimSun">宋体</option><option value="KaiTi">楷体</option>
+      </select>
+      <select class="ynote-tool-select" data-editor-size title="字号">
+        <option value="">字号</option>
+        <option value="12">12px</option><option value="14">14px</option><option value="16">16px</option><option value="18">18px</option>
+        <option value="20">20px</option><option value="24">24px</option><option value="28">28px</option><option value="32">32px</option>
+        <option value="36">36px</option><option value="48">48px</option><option value="60">60px</option><option value="72">72px</option>
+      </select>
+      <select class="ynote-tool-select heading" data-editor-block title="段落样式">
+        <option value="p">正文</option><option value="h1">标题 1</option><option value="h2">标题 2</option><option value="h3">标题 3</option>
+      </select>
+      <span class="ynote-tool-divider"></span>
+      <div class="ynote-tool-group">
+        <button type="button" class="ynote-tool strong" data-editor-command="bold" title="加粗 Ctrl+B">B</button>
+        <button type="button" class="ynote-tool italic" data-editor-command="italic" title="斜体 Ctrl+I">I</button>
+        <button type="button" class="ynote-tool underline" data-editor-command="underline" title="下划线 Ctrl+U">U</button>
+        <label class="ynote-color-tool" title="文字颜色"><span>A</span><input type="color" value="#222222" data-editor-color /></label>
+      </div>
+      <span class="ynote-tool-divider"></span>
+      <div class="ynote-tool-group">
+        <button type="button" class="ynote-tool" data-editor-command="insertUnorderedList" title="项目符号列表">•≡</button>
+        <button type="button" class="ynote-tool" data-editor-command="insertOrderedList" title="编号列表">1≡</button>
+        <button type="button" class="ynote-tool" data-editor-command="justifyLeft" title="左对齐">≡</button>
+        <button type="button" class="ynote-tool center" data-editor-command="justifyCenter" title="居中对齐">≡</button>
+        <button type="button" class="ynote-tool right" data-editor-command="justifyRight" title="右对齐">≡</button>
+        <button type="button" class="ynote-tool quote" data-editor-quote title="引用">❝</button>
+        <button type="button" class="ynote-tool" data-editor-link title="插入链接">🔗</button>
+        <button type="button" class="ynote-tool image" data-editor-image title="插入图片">▧</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderContentBlockEditor() {
@@ -2691,6 +3000,14 @@ function handleDiagramShortcut(event) {
 }
 
 function bindAdminDashboard() {
+  document.querySelectorAll("#taxonomyForm textarea").forEach((textarea) => {
+    const fitContent = () => {
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight + 2}px`;
+    };
+    textarea.addEventListener("input", fitContent);
+    fitContent();
+  });
   document.querySelector('[data-action="createMaterial"]').addEventListener("click", () => {
     resetEmptyMaterialDraft();
     state.view = "adminEditor";
@@ -2710,6 +3027,54 @@ function bindAdminDashboard() {
     await loadBootstrap();
     renderShell();
   });
+  document.querySelectorAll("[data-edit-tags]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const material = state.materials.find((item) => item.id === button.dataset.editTags);
+      state.tagEditorId = button.dataset.editTags;
+      state.tagDraft = [...new Set((material?.tags || []).map((tag) => String(tag).trim()).filter(Boolean))];
+      renderMainView();
+    });
+  });
+  document.querySelectorAll("[data-remove-tag]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.tagDraft.splice(Number(button.dataset.removeTag), 1);
+      renderMainView();
+    });
+  });
+  const addTag = (id) => {
+    const input = document.querySelector(`[data-tag-input="${id}"]`);
+    const incoming = String(input?.value || "").split(/[，,]/).map((tag) => tag.trim()).filter(Boolean);
+    if (!incoming.length) return;
+    state.tagDraft = [...new Set([...state.tagDraft, ...incoming])];
+    renderMainView();
+  };
+  document.querySelectorAll("[data-add-tag]").forEach((button) => button.addEventListener("click", () => addTag(button.dataset.addTag)));
+  document.querySelectorAll("[data-tag-input]").forEach((input) => input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addTag(input.dataset.tagInput);
+  }));
+  document.querySelectorAll("[data-cancel-tags]").forEach((button) => button.addEventListener("click", () => {
+    state.tagEditorId = "";
+    state.tagDraft = [];
+    renderMainView();
+  }));
+  document.querySelectorAll("[data-save-tags]").forEach((button) => button.addEventListener("click", async () => {
+    setError("");
+    try {
+      const data = await api(`/api/materials/${button.dataset.saveTags}`);
+      await api(`/api/materials/${button.dataset.saveTags}`, {
+        method: "PUT",
+        body: JSON.stringify({ ...data.material, tags: state.tagDraft })
+      });
+      state.tagEditorId = "";
+      state.tagDraft = [];
+      await loadBootstrap();
+      renderShell();
+    } catch (error) {
+      setError(error.message);
+    }
+  }));
   bindMaterialRanking();
 }
 
@@ -2723,6 +3088,7 @@ function bindMaterialRanking() {
     });
     row.addEventListener("dragend", () => row.classList.remove("dragging"));
     row.addEventListener("dragover", (event) => {
+      if (rows.find((item) => item.classList.contains("dragging"))?.dataset.materialCategory !== row.dataset.materialCategory) return;
       event.preventDefault();
       row.classList.add("drag-over");
     });
@@ -2736,6 +3102,7 @@ function bindMaterialRanking() {
       const from = state.materials.findIndex((item) => item.id === sourceId);
       const to = state.materials.findIndex((item) => item.id === targetId);
       if (from < 0 || to < 0) return;
+      if ((state.materials[from].category?.trim() || "未分类") !== (state.materials[to].category?.trim() || "未分类")) return;
       const [moved] = state.materials.splice(from, 1);
       state.materials.splice(to, 0, moved);
       await api("/api/materials/reorder", {
@@ -2745,6 +3112,176 @@ function bindMaterialRanking() {
       await loadBootstrap();
       renderShell();
     });
+  });
+}
+
+function bindYnoteMaterialEditor() {
+  const formElement = document.querySelector("#materialForm");
+  const editor = document.querySelector("[data-note-editor]");
+  const imageInput = document.querySelector("[data-note-image-input]");
+  const dropZone = document.querySelector(".ynote-drop-zone");
+  document.querySelector('[data-action="backAdmin"]').addEventListener("click", () => {
+    state.view = "admin";
+    state.editing = null;
+    state.formDraft = null;
+    state.contentBlocks = [];
+    state.noteEditorHtml = "";
+    renderShell();
+  });
+  document.querySelector('[data-action="newMaterial"]').addEventListener("click", () => {
+    resetEmptyMaterialDraft();
+    state.view = "adminEditor";
+    renderShell();
+  });
+  const runCommand = (command, value = null) => {
+    restoreEditorSelection(editor);
+    document.execCommand(command, false, value);
+    syncNoteEditor(editor);
+    saveEditorSelection(editor);
+  };
+  const applyFontSize = (size) => {
+    const pixelSize = Number(size);
+    if (!pixelSize) return;
+    restoreEditorSelection(editor);
+    document.execCommand("styleWithCSS", false, false);
+    document.execCommand("fontSize", false, "7");
+    editor.querySelectorAll('font[size="7"]').forEach((font) => {
+      font.removeAttribute("size");
+      font.style.fontSize = `${pixelSize}px`;
+    });
+    syncNoteEditor(editor);
+    saveEditorSelection(editor);
+  };
+  editor.addEventListener("input", () => syncNoteEditor(editor));
+  editor.addEventListener("mouseup", () => saveEditorSelection(editor));
+  editor.addEventListener("keyup", () => saveEditorSelection(editor));
+  editor.addEventListener("click", (event) => {
+    editor.querySelectorAll("img.selected").forEach((image) => image.classList.remove("selected"));
+    if (event.target.matches("img")) event.target.classList.add("selected");
+  });
+  editor.addEventListener("keydown", (event) => {
+    if (!["Backspace", "Delete"].includes(event.key)) return;
+    const selectedImage = editor.querySelector("img.selected");
+    if (!selectedImage) return;
+    event.preventDefault();
+    const imageLine = selectedImage.closest(".ynote-image-line");
+    if (imageLine) imageLine.remove();
+    else selectedImage.remove();
+    syncNoteEditor(editor);
+  });
+  editor.addEventListener("paste", async (event) => {
+    const files = [...(event.clipboardData?.items || [])]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (!files.length) return;
+    event.preventDefault();
+    try {
+      await insertNoteImages(files, editor);
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  ["dragenter", "dragover"].forEach((name) => dropZone.addEventListener(name, (event) => {
+    event.preventDefault();
+    dropZone.classList.add("drag-active");
+  }));
+  ["dragleave", "drop"].forEach((name) => dropZone.addEventListener(name, (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("drag-active");
+  }));
+  dropZone.addEventListener("drop", async (event) => {
+    try {
+      await insertNoteImages(event.dataTransfer?.files, editor);
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  document.querySelectorAll("[data-editor-command]").forEach((button) => button.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    runCommand(button.dataset.editorCommand);
+  }));
+  document.querySelector("[data-editor-font]").addEventListener("change", (event) => {
+    runCommand("fontName", event.target.value);
+    event.target.value = "";
+  });
+  document.querySelector("[data-editor-size]").addEventListener("change", (event) => {
+    applyFontSize(event.target.value);
+    event.target.value = "";
+  });
+  document.querySelector("[data-editor-block]").addEventListener("change", (event) => runCommand("formatBlock", event.target.value));
+  document.querySelector("[data-editor-color]").addEventListener("input", (event) => runCommand("foreColor", event.target.value));
+  document.querySelector("[data-editor-quote]").addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    runCommand("formatBlock", "blockquote");
+  });
+  document.querySelector("[data-editor-link]").addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    const url = prompt("请输入链接地址（以 http:// 或 https:// 开头）");
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      setError("链接必须以 http:// 或 https:// 开头");
+      return;
+    }
+    runCommand("createLink", url);
+  });
+  document.querySelector("[data-editor-image]").addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    saveEditorSelection(editor);
+    imageInput.click();
+  });
+  imageInput.addEventListener("change", async () => {
+    try {
+      await insertNoteImages(imageInput.files, editor);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      imageInput.value = "";
+    }
+  });
+  formElement.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setError("");
+    const form = new FormData(event.currentTarget);
+    syncNoteEditor(editor);
+    const body = noteEditorPlainText(editor);
+    const images = noteEditorImages(editor);
+    const title = String(form.get("title") || "").trim();
+    if (!title) {
+      setError("请输入笔记标题");
+      return;
+    }
+    if (!body && !images.length) {
+      setError("请输入笔记内容或插入图片");
+      return;
+    }
+    const legacyMindmapBlocks = state.contentBlocks
+      .filter((block) => block.type === "mindmap")
+      .map((block) => ({ type: "mindmap", mindmap: block.mindmap || state.mindmap }));
+    const blocks = [{ type: "document", body, html: state.noteEditorHtml, images }, ...legacyMindmapBlocks];
+    const payload = {
+      title,
+      category: state.editing?.category || "",
+      tags: state.editing?.tags || [],
+      type: images.length ? "image" : "text",
+      status: "published",
+      body,
+      images,
+      video: state.formVideo,
+      mindmap: legacyMindmapBlocks[0]?.mindmap || null,
+      blocks
+    };
+    try {
+      const path = state.editing ? `/api/materials/${state.editing.id}` : "/api/materials";
+      const method = state.editing ? "PUT" : "POST";
+      await api(path, { method, body: JSON.stringify(payload) });
+      resetEmptyMaterialDraft();
+      await loadBootstrap();
+      state.view = "admin";
+      renderShell();
+    } catch (error) {
+      setError(error.message);
+    }
   });
 }
 
