@@ -2743,6 +2743,19 @@ textarea:focus {
   min-width: 260px;
 }
 
+.material-table-scroll {
+  overflow-x: auto;
+}
+
+.material-category-cell {
+  min-width: 140px;
+}
+
+.material-category-cell select {
+  min-height: 34px;
+  padding: 5px 8px;
+}
+
 .tag-chip-list {
   display: flex;
   align-items: center;

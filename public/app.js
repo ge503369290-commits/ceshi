@@ -2335,17 +2335,26 @@ function renderAdmin(target) {
         </section>
         <section class="panel">
           <h2>资料列表</h2>
+          <div data-error></div>
+          <div class="material-table-scroll">
           <table class="table">
-            <thead><tr><th>排序</th><th>标题</th><th>标签</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>排序</th><th>标题</th><th>分类</th><th>标签</th><th>状态</th><th>操作</th></tr></thead>
             ${categoryNames.map((category) => `
               <tbody>
-                <tr class="material-category-heading"><th colspan="5" scope="rowgroup">${escapeHtml(category)} <span>${state.materials.filter((item) => (item.category?.trim() || "未分类") === category).length} 项</span></th></tr>
+                <tr class="material-category-heading"><th colspan="6" scope="rowgroup">${escapeHtml(category)} <span>${state.materials.filter((item) => (item.category?.trim() || "未分类") === category).length} 项</span></th></tr>
               ${state.materials.filter((item) => (item.category?.trim() || "未分类") === category)
                 .map(
                   (item) => `
                     <tr draggable="${state.tagEditorId === item.id ? "false" : "true"}" data-material-row="${item.id}" data-material-category="${escapeHtml(category)}">
                       <td><span class="drag-handle" title="拖动排序">↕</span></td>
                       <td>${escapeHtml(item.title)}</td>
+                      <td class="material-category-cell">
+                        <select data-category-select="${item.id}" aria-label="${escapeHtml(item.title)}的分类">
+                          <option value="" ${!item.category ? "selected" : ""}>未分类</option>
+                          ${[...new Set([...state.categories, item.category].filter(Boolean))].map((name) => `<option value="${escapeHtml(name)}" ${name === item.category ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+                        </select>
+                        <button class="tag-edit-link" type="button" data-save-category="${item.id}">保存分类</button>
+                      </td>
                       <td class="material-tags-cell">
                         <div class="tag-chip-list">
                           ${(item.tags || []).length ? (item.tags || []).map((tag) => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join("") : '<span class="muted">未设置</span>'}
@@ -2373,6 +2382,7 @@ function renderAdmin(target) {
               </tbody>
             `).join("")}
           </table>
+          </div>
         </section>
       </div>
     </div>
@@ -3027,6 +3037,25 @@ function bindAdminDashboard() {
     await loadBootstrap();
     renderShell();
   });
+  const updateMaterialMetadata = async (id, changes) => {
+    const { material } = await api(`/api/materials/${id}`);
+    await api(`/api/materials/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...material, ...changes })
+    });
+  };
+  document.querySelectorAll("[data-save-category]").forEach((button) => button.addEventListener("click", async () => {
+    setError("");
+    try {
+      const id = button.dataset.saveCategory;
+      const category = document.querySelector(`[data-category-select="${id}"]`).value;
+      await updateMaterialMetadata(id, { category });
+      await loadBootstrap();
+      renderShell();
+    } catch (error) {
+      setError(error.message);
+    }
+  }));
   document.querySelectorAll("[data-edit-tags]").forEach((button) => {
     button.addEventListener("click", () => {
       const material = state.materials.find((item) => item.id === button.dataset.editTags);
@@ -3062,11 +3091,10 @@ function bindAdminDashboard() {
   document.querySelectorAll("[data-save-tags]").forEach((button) => button.addEventListener("click", async () => {
     setError("");
     try {
-      const data = await api(`/api/materials/${button.dataset.saveTags}`);
-      await api(`/api/materials/${button.dataset.saveTags}`, {
-        method: "PUT",
-        body: JSON.stringify({ ...data.material, tags: state.tagDraft })
-      });
+      const id = button.dataset.saveTags;
+      const pending = String(document.querySelector(`[data-tag-input="${id}"]`)?.value || "")
+        .split(/[，,]/).map((tag) => tag.trim()).filter(Boolean);
+      await updateMaterialMetadata(id, { tags: [...new Set([...state.tagDraft, ...pending])] });
       state.tagEditorId = "";
       state.tagDraft = [];
       await loadBootstrap();
